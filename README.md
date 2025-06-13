@@ -10,7 +10,7 @@ to build something better.
 
 ## Philosophy
 
-- **Simple**: Just three commands: detect, version, release
+- **Simple**: One command that detects, versions, and releases
 - **Fast**: Local operations by default, network only when necessary
 - **Reliable**: Pluggable storage backends, graceful degradation
 - **Extensible**: Clean interfaces, easy to add features without breaking core
@@ -41,9 +41,10 @@ The key innovation: everything flows through a storage interface.
 
 ## What It Does (MVP)
 
-1. **Detects** commits since last release
+1. **Detects** commits since last release using git log
 2. **Calculates** version bump from conventional commits
-3. **Creates** GitHub release with generated notes
+3. **Creates** git tags locally and pushes them
+4. **Saves** release info via storage backend
 
 That's it. No configuration files, no complex workflows, no surprises.
 
@@ -65,15 +66,15 @@ That's it. No configuration files, no complex workflows, no surprises.
 ## Installation
 
 ```bash
-# Deno (recommended)
-deno install -A https://deno.land/x/pls/cli.ts
+# Clone and run locally (for now)
+git clone https://github.com/yourusername/pls
+cd pls
+deno task dev
 
-# Node.js
-npm install -g @stainless/pls
+# Or run directly
+deno run -A https://raw.githubusercontent.com/yourusername/pls/main/src/cli.ts
 
-# GitHub Actions
-- uses: denoland/setup-deno@v1
-- run: deno run -A https://deno.land/x/pls/cli.ts
+# Coming soon: deno.land/x and npm packages
 ```
 
 ## Architecture

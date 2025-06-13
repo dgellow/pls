@@ -1,0 +1,9 @@
+# Local PLS state
+.pls/
+
+# Deno generated files
+deno.lock
+
+# Node modules (if npm build is added)
+node_modules/
+npm/

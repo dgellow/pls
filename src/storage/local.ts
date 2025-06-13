@@ -17,13 +17,39 @@ export class LocalStorage implements Storage {
     this.stateDir = '.pls';
   }
 
+  private async getRepoRoot(): Promise<string> {
+    try {
+      const command = new Deno.Command('git', {
+        args: ['rev-parse', '--show-toplevel'],
+      });
+      const { code, stdout } = await command.output();
+      
+      if (code !== 0) {
+        // Not in a git repo, use current directory
+        return Deno.cwd();
+      }
+      
+      return new TextDecoder().decode(stdout).trim();
+    } catch {
+      // Git not available, use current directory
+      return Deno.cwd();
+    }
+  }
+
   private async ensureStateDir(): Promise<void> {
-    await ensureDir(this.stateDir);
+    const repoRoot = await this.getRepoRoot();
+    const fullStateDir = join(repoRoot, this.stateDir);
+    await ensureDir(fullStateDir);
+  }
+
+  private async getStatePath(): Promise<string> {
+    const repoRoot = await this.getRepoRoot();
+    return join(repoRoot, this.stateDir, STATE_FILE);
   }
 
   private async readState(): Promise<LocalState> {
     await this.ensureStateDir();
-    const statePath = join(this.stateDir, STATE_FILE);
+    const statePath = await this.getStatePath();
 
     try {
       const content = await Deno.readTextFile(statePath);
@@ -55,7 +81,7 @@ export class LocalStorage implements Storage {
 
   private async writeState(state: LocalState): Promise<void> {
     await this.ensureStateDir();
-    const statePath = join(this.stateDir, STATE_FILE);
+    const statePath = await this.getStatePath();
 
     try {
       const content = JSON.stringify(state, null, 2);
