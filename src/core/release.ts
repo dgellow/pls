@@ -1,0 +1,153 @@
+import type { Commit, Release, Storage, VersionBump } from '../types.ts';
+import { PlsError } from '../types.ts';
+
+export class ReleaseManager {
+  constructor(private storage: Storage) {}
+
+  generateReleaseNotes(bump: VersionBump): string {
+    const { from, to, type, commits } = bump;
+    const lines: string[] = [];
+
+    lines.push(`## ${to}`);
+    lines.push('');
+    lines.push(`### Version Bump`);
+    lines.push(`- ${from} → ${to} (${type})`);
+    lines.push('');
+
+    // Group commits by type
+    const groups = new Map<string, Commit[]>();
+    const otherCommits: Commit[] = [];
+
+    for (const commit of commits) {
+      const match = commit.message.match(/^(\w+)(?:\([^)]+\))?!?:/);
+      if (match) {
+        const type = match[1];
+        if (!groups.has(type)) {
+          groups.set(type, []);
+        }
+        groups.get(type)!.push(commit);
+      } else {
+        otherCommits.push(commit);
+      }
+    }
+
+    // Add grouped commits
+    const typeOrder = [
+      'feat',
+      'fix',
+      'docs',
+      'style',
+      'refactor',
+      'perf',
+      'test',
+      'build',
+      'ci',
+      'chore',
+    ];
+    const typeLabels: Record<string, string> = {
+      feat: '✨ Features',
+      fix: '🐛 Bug Fixes',
+      docs: '📚 Documentation',
+      style: '💎 Styles',
+      refactor: '📦 Code Refactoring',
+      perf: '🚀 Performance Improvements',
+      test: '🚨 Tests',
+      build: '🛠 Builds',
+      ci: '⚙️ Continuous Integration',
+      chore: '♻️ Chores',
+    };
+
+    for (const type of typeOrder) {
+      const commits = groups.get(type);
+      if (!commits || commits.length === 0) continue;
+
+      lines.push(`### ${typeLabels[type] || type}`);
+      lines.push('');
+
+      for (const commit of commits) {
+        const message = commit.message.replace(/^\w+(\([^)]+\))?!?:\s*/, '');
+        lines.push(`- ${message} (${commit.sha.substring(0, 7)})`);
+      }
+      lines.push('');
+    }
+
+    // Add other commits if any
+    if (otherCommits.length > 0) {
+      lines.push('### Other Changes');
+      lines.push('');
+      for (const commit of otherCommits) {
+        lines.push(`- ${commit.message} (${commit.sha.substring(0, 7)})`);
+      }
+      lines.push('');
+    }
+
+    return lines.join('\n').trim();
+  }
+
+  async createRelease(
+    bump: VersionBump,
+    sha: string,
+    dryRun = false,
+  ): Promise<Release> {
+    const tag = `v${bump.to}`;
+    const notes = this.generateReleaseNotes(bump);
+
+    const release: Release = {
+      version: bump.to,
+      tag,
+      sha,
+      createdAt: new Date(),
+      notes,
+    };
+
+    if (dryRun) {
+      console.log('🏷️  Dry run - would create release:');
+      console.log(`   Version: ${release.version}`);
+      console.log(`   Tag: ${release.tag}`);
+      console.log(`   SHA: ${release.sha}`);
+      console.log('');
+      console.log('📝 Release Notes:');
+      console.log(notes);
+      return release;
+    }
+
+    try {
+      // Create git tag locally
+      const tagCommand = new Deno.Command('git', {
+        args: ['tag', '-a', tag, '-m', `Release ${tag}`, sha],
+      });
+      const { code, stderr } = await tagCommand.output();
+
+      if (code !== 0) {
+        const error = new TextDecoder().decode(stderr);
+        throw new PlsError(
+          `Failed to create git tag: ${error}`,
+          'GIT_TAG_ERROR',
+        );
+      }
+
+      // Push tag to remote
+      const pushCommand = new Deno.Command('git', {
+        args: ['push', 'origin', tag],
+      });
+      const pushResult = await pushCommand.output();
+
+      if (pushResult.code !== 0) {
+        const error = new TextDecoder().decode(pushResult.stderr);
+        console.warn(`Warning: Failed to push tag to remote: ${error}`);
+      }
+
+      // Save release to storage
+      await this.storage.saveRelease(release);
+
+      return release;
+    } catch (error) {
+      if (error instanceof PlsError) throw error;
+      throw new PlsError(
+        `Failed to create release: ${error instanceof Error ? error.message : String(error)}`,
+        'RELEASE_ERROR',
+        error,
+      );
+    }
+  }
+}
