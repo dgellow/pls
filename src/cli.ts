@@ -8,42 +8,87 @@ import { PlsError } from './types.ts';
 
 const VERSION = '0.1.0';
 
+async function cloneToTemp(repoUrl: string): Promise<string> {
+  const tempDir = await Deno.makeTempDir({ prefix: 'pls-' });
+  
+  console.log(`📥 Cloning ${cyan(repoUrl)}...`);
+  
+  const command = new Deno.Command('git', {
+    args: ['clone', '--depth', '1', repoUrl, tempDir],
+  });
+  
+  const { code, stderr } = await command.output();
+  
+  if (code !== 0) {
+    const error = new TextDecoder().decode(stderr);
+    throw new PlsError(
+      `Failed to clone repository: ${error}`,
+      'CLONE_ERROR',
+    );
+  }
+  
+  return tempDir;
+}
+
+function parseRepoUrl(url: string): { owner: string; repo: string } | null {
+  // Handle GitHub URLs (https and ssh)
+  const patterns = [
+    /^https:\/\/github\.com\/([^\/]+)\/([^\/]+?)(\.git)?$/,
+    /^git@github\.com:([^\/]+)\/([^\/]+?)(\.git)?$/,
+  ];
+  
+  for (const pattern of patterns) {
+    const match = url.match(pattern);
+    if (match) {
+      return {
+        owner: match[1],
+        repo: match[2],
+      };
+    }
+  }
+  
+  return null;
+}
+
 function printHelp(): void {
   console.log(`
 ${bold('pls')} - A minimal, fast release automation tool
 
 ${bold('USAGE:')}
-  pls [OPTIONS]
+  pls [REPO_URL] [OPTIONS]
+
+${bold('ARGUMENTS:')}
+  REPO_URL             Git repository URL to analyze (optional, defaults to current directory)
 
 ${bold('OPTIONS:')}
   --storage <type>     Storage backend: local (default) or github
-  --dry-run            Show what would be done without making changes
+  --execute            Actually create the release (default is dry-run)
+  --force              Skip safety checks and create release
   --owner <owner>      GitHub repository owner (auto-detected from git remote)
   --repo <repo>        GitHub repository name (auto-detected from git remote)
   --token <token>      GitHub token (or set GITHUB_TOKEN env var)
-  --help, -h           Show this help message
-  --version, -v        Show version
+  --help               Show this help message
+  --version            Show version
 
 ${bold('EXAMPLES:')}
-  # Create a release using local storage
+  # Dry run (default behavior)
   pls
 
-  # Dry run with GitHub storage
-  pls --storage=github --dry-run
+  # Actually create a release
+  pls --execute
 
-  # Use specific GitHub repo
-  pls --storage=github --owner=myorg --repo=myrepo
+  # Analyze remote repository (dry run)
+  pls https://github.com/owner/repo.git
+
+  # Create release for remote repo
+  pls https://github.com/owner/repo.git --execute
 `);
 }
 
 async function main(): Promise<void> {
   const args = parseArgs(Deno.args, {
-    boolean: ['help', 'version', 'dry-run'],
+    boolean: ['help', 'version', 'execute', 'force'],
     string: ['storage', 'owner', 'repo', 'token'],
-    alias: {
-      h: 'help',
-      v: 'version',
-    },
     default: {
       storage: 'local',
     },
@@ -59,12 +104,38 @@ async function main(): Promise<void> {
     return;
   }
 
+  // Handle repository URL argument
+  const repoUrl = args._[0]?.toString();
+  let workingDir = Deno.cwd();
+  let tempDir: string | null = null;
+  let repoInfo = { owner: args.owner, repo: args.repo };
+
+  if (repoUrl) {
+    // Clone remote repository to temp directory
+    tempDir = await cloneToTemp(repoUrl);
+    workingDir = tempDir;
+    
+    // Parse owner/repo from URL if not provided
+    const parsed = parseRepoUrl(repoUrl);
+    if (parsed) {
+      repoInfo = {
+        owner: repoInfo.owner || parsed.owner,
+        repo: repoInfo.repo || parsed.repo,
+      };
+    }
+  }
+
   try {
+    // Change to working directory
+    const originalCwd = Deno.cwd();
+    if (workingDir !== originalCwd) {
+      Deno.chdir(workingDir);
+    }
+
     console.log(bold('🚀 PLS - Release Automation\n'));
 
     // Create detector to get repo info
     const detector = new Detector();
-    let repoInfo = { owner: args.owner, repo: args.repo };
 
     // Auto-detect GitHub repo if not provided
     if (args.storage === 'github' && (!repoInfo.owner || !repoInfo.repo)) {
@@ -122,21 +193,31 @@ async function main(): Promise<void> {
 
     // Create release
     const releaseManager = new ReleaseManager(storage);
+    const isDryRun = !args.execute;
 
-    if (args['dry-run']) {
-      console.log(yellow('\n⚠️  DRY RUN MODE - No changes will be made\n'));
+    if (isDryRun) {
+      console.log(yellow('\n🔍 DRY RUN MODE (use --execute to create release)\n'));
     }
 
     const release = await releaseManager.createRelease(
       bump,
       changes.currentSha,
-      args['dry-run'],
+      isDryRun,
     );
 
-    if (!args['dry-run']) {
+    if (!isDryRun) {
       console.log(`\n✅ Release ${green(release.tag)} created successfully!`);
       if (release.url) {
         console.log(`🔗 ${release.url}`);
+      }
+    }
+
+    // Cleanup temp directory
+    if (tempDir) {
+      try {
+        await Deno.remove(tempDir, { recursive: true });
+      } catch {
+        // Ignore cleanup errors
       }
     }
   } catch (error) {
@@ -148,6 +229,16 @@ async function main(): Promise<void> {
     } else {
       console.error(`\n${red('❌ Unexpected error:')}`, error);
     }
+    
+    // Cleanup temp directory on error
+    if (tempDir) {
+      try {
+        await Deno.remove(tempDir, { recursive: true });
+      } catch {
+        // Ignore cleanup errors
+      }
+    }
+    
     Deno.exit(1);
   }
 }
