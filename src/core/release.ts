@@ -1,8 +1,59 @@
 import type { Commit, Release, Storage, VersionBump } from '../types.ts';
 import { PlsError } from '../types.ts';
+import { ensureFile } from '@std/fs';
 
 export class ReleaseManager {
   constructor(private storage: Storage) {}
+
+  private async updateChangelog(release: Release): Promise<void> {
+    const changelogPath = 'CHANGELOG.md';
+    
+    try {
+      // Ensure file exists
+      await ensureFile(changelogPath);
+      
+      // Read existing content
+      let existingContent = '';
+      try {
+        existingContent = await Deno.readTextFile(changelogPath);
+      } catch {
+        // File is empty or doesn't exist, that's fine
+      }
+
+      // Generate release section with date
+      const date = release.createdAt.toISOString().split('T')[0];
+      // Remove version header from notes since we're adding it with date
+      const notesWithoutHeader = release.notes?.replace(/^## \d+\.\d+\.\d+.*\n\n/, '') || '';
+      const releaseSection = `## ${release.version} (${date})\n\n${notesWithoutHeader}\n`;
+
+      // Prepare new content
+      let newContent: string;
+      if (!existingContent || existingContent.trim() === '') {
+        // Create new changelog
+        newContent = `# Changelog\n\n${releaseSection}`;
+      } else if (existingContent.startsWith('# Changelog')) {
+        // Insert after header - find the first empty line after header
+        const headerEndIndex = existingContent.indexOf('\n\n');
+        if (headerEndIndex > -1) {
+          const beforeHeader = existingContent.substring(0, headerEndIndex + 2);
+          const afterHeader = existingContent.substring(headerEndIndex + 2);
+          newContent = `${beforeHeader}${releaseSection}\n${afterHeader}`;
+        } else {
+          newContent = `${existingContent}\n\n${releaseSection}`;
+        }
+      } else {
+        // No header, add it
+        newContent = `# Changelog\n\n${releaseSection}\n${existingContent}`;
+      }
+
+      // Write back
+      await Deno.writeTextFile(changelogPath, newContent);
+      console.log(`📝 Updated CHANGELOG.md`);
+    } catch (error) {
+      // Don't fail the release if changelog update fails
+      console.warn(`⚠️  Failed to update CHANGELOG.md: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
 
   generateReleaseNotes(bump: VersionBump): string {
     const { from, to, type, commits } = bump;
@@ -148,6 +199,9 @@ export class ReleaseManager {
 
       // Save release to storage
       await this.storage.saveRelease(release);
+
+      // Update CHANGELOG.md
+      await this.updateChangelog(release);
 
       return release;
     } catch (error) {
