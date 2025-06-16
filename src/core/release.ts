@@ -64,15 +64,10 @@ export class ReleaseManager {
     
     // Handle transition releases specially
     if (type === 'transition' as any) {
-      lines.push(`### Version Transition`);
-      lines.push(`- ${from} → ${to}`);
+      lines.push(`Version transition from ${from} to ${to}`);
       lines.push('');
       return lines.join('\n').trim();
     }
-    
-    lines.push(`### Version Bump`);
-    lines.push(`- ${from} → ${to} (${type})`);
-    lines.push('');
 
     // Group commits by type
     const groups = new Map<string, Commit[]>();
