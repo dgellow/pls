@@ -1,6 +1,7 @@
 import { format, increment, parse } from '@std/semver';
 import type { Commit, VersionBump } from '../types.ts';
 import { PlsError } from '../types.ts';
+import { VersionTransition } from './transition.ts';
 
 export interface ConventionalCommit {
   type: string;
@@ -10,6 +11,8 @@ export interface ConventionalCommit {
 }
 
 export class Version {
+  private transition = new VersionTransition();
+
   private parseConventionalCommit(message: string): ConventionalCommit | null {
     // Basic conventional commit regex
     // Format: type(scope)!: description
@@ -93,10 +96,16 @@ export class Version {
     bumpType: 'major' | 'minor' | 'patch',
   ): string {
     try {
-      const parsed = parse(currentVersion);
-      const incremented = increment(parsed, bumpType);
-      return format(incremented);
+      const nextVersion = this.transition.getNextVersion(currentVersion, bumpType);
+      if (!nextVersion) {
+        throw new PlsError(
+          'Could not determine next version',
+          'VERSION_CALC_ERROR',
+        );
+      }
+      return nextVersion;
     } catch (error) {
+      if (error instanceof PlsError) throw error;
       throw new PlsError(
         `Invalid version format: ${currentVersion}`,
         'VERSION_PARSE_ERROR',

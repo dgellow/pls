@@ -5,6 +5,7 @@ import { bold, cyan, green, red, yellow } from '@std/fmt/colors';
 import { createStorage } from './storage/mod.ts';
 import { Detector, ReleaseManager, Version } from './core/mod.ts';
 import { PlsError } from './types.ts';
+import { handleTransition } from './cli-transition.ts';
 
 const VERSION = '0.1.0';
 
@@ -56,6 +57,10 @@ ${bold('pls')} - A minimal, fast release automation tool
 
 ${bold('USAGE:')}
   pls [REPO_URL] [OPTIONS]
+  pls transition <TARGET> [OPTIONS]
+
+${bold('COMMANDS:')}
+  transition           Transition between release stages (alpha, beta, rc, stable)
 
 ${bold('ARGUMENTS:')}
   REPO_URL             Git repository URL to analyze (optional, defaults to current directory)
@@ -77,15 +82,21 @@ ${bold('EXAMPLES:')}
   # Actually create a release
   pls --execute
 
-  # Analyze remote repository (dry run)
-  pls https://github.com/owner/repo.git
+  # Transition to beta
+  pls transition beta --execute
 
-  # Create release for remote repo
-  pls https://github.com/owner/repo.git --execute
+  # Analyze remote repository
+  pls https://github.com/owner/repo.git
 `);
 }
 
 async function main(): Promise<void> {
+  // Check for subcommands first
+  if (Deno.args.length > 0 && Deno.args[0] === 'transition') {
+    await handleTransition(Deno.args.slice(1));
+    return;
+  }
+
   const args = parseArgs(Deno.args, {
     boolean: ['help', 'version', 'execute', 'force'],
     string: ['storage', 'owner', 'repo', 'token'],

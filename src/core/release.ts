@@ -10,6 +10,15 @@ export class ReleaseManager {
 
     lines.push(`## ${to}`);
     lines.push('');
+    
+    // Handle transition releases specially
+    if (type === 'transition' as any) {
+      lines.push(`### Version Transition`);
+      lines.push(`- ${from} → ${to}`);
+      lines.push('');
+      return lines.join('\n').trim();
+    }
+    
     lines.push(`### Version Bump`);
     lines.push(`- ${from} → ${to} (${type})`);
     lines.push('');
