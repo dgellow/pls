@@ -130,7 +130,7 @@ deno fmt
 # Type check
 deno check src/mod.ts
 
-# Build npm package (TODO: implement)
+# Build npm package (WIP: has dnt compatibility issues)
 # deno run -A scripts/build_npm.ts
 ```
 
