@@ -18,17 +18,26 @@ to build something better.
 ## How it Works
 
 ```bash
-# Create a new release (analyzes commits, bumps version, creates GitHub release)
+# Dry run (default - shows what would happen)
 pls
 
-# Dry run to see what would happen
-pls --dry-run
+# Create a new release (analyzes commits, bumps version, creates GitHub release)
+pls --execute
 
 # Use local storage (fast, works offline)
-pls --storage=local
+pls --storage=local --execute
 
 # Use GitHub storage (release-please compatible)
-pls --storage=github
+pls --storage=github --execute
+
+# Start alpha prerelease cycle
+pls transition alpha --execute
+
+# Move from alpha to beta
+pls transition beta --execute
+
+# Graduate RC to stable
+pls transition stable --execute
 ```
 
 ## Storage Backends
@@ -39,19 +48,20 @@ The key innovation: everything flows through a storage interface.
 - **GitHub**: Uses tags and releases - compatible with existing workflows
 - **Future**: S3, Redis, PostgreSQL - whatever you need
 
-## What It Does (MVP)
+## What It Does
 
 1. **Detects** commits since last release using git log
 2. **Calculates** version bump from conventional commits
 3. **Creates** git tags locally and pushes them
 4. **Saves** release info via storage backend
+5. **Generates** CHANGELOG.md automatically with release notes
+6. **Transitions** between release stages (alpha → beta → rc → stable)
 
 That's it. No configuration files, no complex workflows, no surprises.
 
 ## What It Doesn't Do (Yet)
 
 - Pull requests (coming in v2)
-- CHANGELOG files (coming in v2)
 - Monorepos (coming in v3)
 - Configuration files (only if needed)
 

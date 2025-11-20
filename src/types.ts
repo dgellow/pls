@@ -17,7 +17,7 @@ export interface Commit {
 export interface VersionBump {
   from: string;
   to: string;
-  type: 'major' | 'minor' | 'patch';
+  type: 'major' | 'minor' | 'patch' | 'transition';
   commits: Commit[];
 }
 

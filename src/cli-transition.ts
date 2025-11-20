@@ -112,7 +112,7 @@ export async function handleTransition(args: string[]): Promise<void> {
     const bump = {
       from: currentVersion,
       to: newVersion,
-      type: 'transition' as any, // Not a standard bump type
+      type: 'transition' as const,
       commits: [], // No commits needed for transition
     };
 

@@ -61,9 +61,9 @@ export class ReleaseManager {
 
     lines.push(`## ${to}`);
     lines.push('');
-    
+
     // Handle transition releases specially
-    if (type === 'transition' as any) {
+    if (type === 'transition') {
       lines.push(`Version transition from ${from} to ${to}`);
       lines.push('');
       return lines.join('\n').trim();
@@ -100,16 +100,16 @@ export class ReleaseManager {
       'chore',
     ];
     const typeLabels: Record<string, string> = {
-      feat: '✨ Features',
-      fix: '🐛 Bug Fixes',
-      docs: '📚 Documentation',
-      style: '💎 Styles',
-      refactor: '📦 Code Refactoring',
-      perf: '🚀 Performance Improvements',
-      test: '🚨 Tests',
-      build: '🛠 Builds',
-      ci: '⚙️ Continuous Integration',
-      chore: '♻️ Chores',
+      feat: 'Features',
+      fix: 'Bug Fixes',
+      docs: 'Documentation',
+      style: 'Styles',
+      refactor: 'Code Refactoring',
+      perf: 'Performance Improvements',
+      test: 'Tests',
+      build: 'Builds',
+      ci: 'Continuous Integration',
+      chore: 'Chores',
     };
 
     for (const type of typeOrder) {
