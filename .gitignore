@@ -7,3 +7,9 @@ deno.lock
 # Node modules (if npm build is added)
 node_modules/
 npm/
+
+# Auto-generated files
+CHANGELOG.md
+
+# Test fixtures
+test-monorepo/
