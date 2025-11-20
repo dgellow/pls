@@ -153,3 +153,78 @@ Deno.test('Version - determineVersionBump returns null for no commits', async ()
   const bump = await version.determineVersionBump('1.0.0', []);
   assertEquals(bump, null);
 });
+
+Deno.test('Version - getCurrentVersion reads from package.json', async () => {
+  const tempDir = await Deno.makeTempDir({ prefix: 'pls-version-test-' });
+  const originalCwd = Deno.cwd();
+
+  try {
+    Deno.chdir(tempDir);
+
+    await Deno.writeTextFile('package.json', JSON.stringify({ version: '2.5.3' }));
+
+    const version = new Version();
+    const currentVersion = await version.getCurrentVersion();
+
+    assertEquals(currentVersion, '2.5.3');
+  } finally {
+    Deno.chdir(originalCwd);
+    await Deno.remove(tempDir, { recursive: true });
+  }
+});
+
+Deno.test('Version - getCurrentVersion reads from deno.json', async () => {
+  const tempDir = await Deno.makeTempDir({ prefix: 'pls-version-test-' });
+  const originalCwd = Deno.cwd();
+
+  try {
+    Deno.chdir(tempDir);
+
+    await Deno.writeTextFile('deno.json', JSON.stringify({ version: '1.2.3' }));
+
+    const version = new Version();
+    const currentVersion = await version.getCurrentVersion();
+
+    assertEquals(currentVersion, '1.2.3');
+  } finally {
+    Deno.chdir(originalCwd);
+    await Deno.remove(tempDir, { recursive: true });
+  }
+});
+
+Deno.test('Version - getCurrentVersion returns null when no version files exist', async () => {
+  const tempDir = await Deno.makeTempDir({ prefix: 'pls-version-test-' });
+  const originalCwd = Deno.cwd();
+
+  try {
+    Deno.chdir(tempDir);
+
+    const version = new Version();
+    const currentVersion = await version.getCurrentVersion();
+
+    assertEquals(currentVersion, null);
+  } finally {
+    Deno.chdir(originalCwd);
+    await Deno.remove(tempDir, { recursive: true });
+  }
+});
+
+Deno.test('Version - getCurrentVersion prefers package.json over deno.json', async () => {
+  const tempDir = await Deno.makeTempDir({ prefix: 'pls-version-test-' });
+  const originalCwd = Deno.cwd();
+
+  try {
+    Deno.chdir(tempDir);
+
+    await Deno.writeTextFile('package.json', JSON.stringify({ version: '3.0.0' }));
+    await Deno.writeTextFile('deno.json', JSON.stringify({ version: '2.0.0' }));
+
+    const version = new Version();
+    const currentVersion = await version.getCurrentVersion();
+
+    assertEquals(currentVersion, '3.0.0');
+  } finally {
+    Deno.chdir(originalCwd);
+    await Deno.remove(tempDir, { recursive: true });
+  }
+});
