@@ -35,7 +35,7 @@ export class GitHubStorage implements Storage {
 
     if (!this.owner || !this.repo) {
       throw new PlsError(
-        'GitHub storage requires owner and repo',
+        'GitHub storage requires owner and repo. Provide them via options or set a git remote: --owner=<owner> --repo=<repo>',
         'GITHUB_CONFIG_ERROR',
       );
     }
