@@ -111,7 +111,3 @@ We prioritize:
 - Clarity over cleverness
 
 See [CLAUDE.md](./CLAUDE.md) for implementation details.
-
-## License
-
-MIT

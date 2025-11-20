@@ -37,7 +37,6 @@ await build({
   postBuild() {
     // Copy additional files to npm directory
     Deno.copyFileSync('README.md', 'npm/README.md');
-    Deno.copyFileSync('LICENSE', 'npm/LICENSE');
   },
   compilerOptions: {
     lib: ['ES2021', 'DOM'],
