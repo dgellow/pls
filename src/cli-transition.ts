@@ -24,6 +24,9 @@ ${bold('OPTIONS:')}
   --patch              Bump patch version (when transitioning from stable)
   --execute            Actually create the release (default is dry-run)
   --storage <type>     Storage backend: local (default) or github
+  --owner <owner>      GitHub repository owner (auto-detected from git remote)
+  --repo <repo>        GitHub repository name (auto-detected from git remote)
+  --token <token>      GitHub token (or set GITHUB_TOKEN env var)
 
 ${bold('EXAMPLES:')}
   # Start alpha cycle (dry run)
@@ -43,7 +46,7 @@ ${bold('EXAMPLES:')}
 export async function handleTransition(args: string[]): Promise<void> {
   const parsed = parseArgs(args, {
     boolean: ['help', 'major', 'minor', 'patch', 'execute'],
-    string: ['storage'],
+    string: ['storage', 'owner', 'repo', 'token'],
     default: {
       storage: 'local',
     },
@@ -73,7 +76,25 @@ export async function handleTransition(args: string[]): Promise<void> {
 
     // Create detector and storage
     const detector = new Detector();
-    const storage = createStorage(parsed.storage as 'local' | 'github', {});
+    let repoInfo = { owner: parsed.owner, repo: parsed.repo };
+
+    // Auto-detect GitHub repo if not provided
+    if (parsed.storage === 'github' && (!repoInfo.owner || !repoInfo.repo)) {
+      const detected = await detector.getRepoInfo();
+      if (detected) {
+        repoInfo = {
+          owner: repoInfo.owner || detected.owner,
+          repo: repoInfo.repo || detected.repo,
+        };
+        console.log(`📦 Detected repository: ${cyan(`${repoInfo.owner}/${repoInfo.repo}`)}`);
+      }
+    }
+
+    const storage = createStorage(parsed.storage as 'local' | 'github', {
+      owner: repoInfo.owner,
+      repo: repoInfo.repo,
+      token: parsed.token,
+    });
 
     console.log(`💾 Using storage: ${cyan(parsed.storage)}`);
 
