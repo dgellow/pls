@@ -7,11 +7,11 @@ export class ReleaseManager {
 
   private async updateChangelog(release: Release): Promise<void> {
     const changelogPath = 'CHANGELOG.md';
-    
+
     try {
       // Ensure file exists
       await ensureFile(changelogPath);
-      
+
       // Read existing content
       let existingContent = '';
       try {
@@ -51,7 +51,11 @@ export class ReleaseManager {
       console.log(`📝 Updated CHANGELOG.md`);
     } catch (error) {
       // Don't fail the release if changelog update fails
-      console.warn(`⚠️  Failed to update CHANGELOG.md: ${error instanceof Error ? error.message : String(error)}`);
+      console.warn(
+        `⚠️  Failed to update CHANGELOG.md: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
     }
   }
 

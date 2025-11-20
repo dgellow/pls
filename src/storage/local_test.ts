@@ -1,7 +1,6 @@
 import { assertEquals, assertExists } from '@std/assert';
 import { LocalStorage } from './local.ts';
 import type { Release } from '../types.ts';
-import { join } from '@std/path';
 
 Deno.test('LocalStorage - saveRelease and getLastRelease', async () => {
   const tempDir = await Deno.makeTempDir({ prefix: 'pls-test-' });

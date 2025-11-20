@@ -11,15 +11,15 @@ const VERSION = '0.1.0';
 
 async function cloneToTemp(repoUrl: string): Promise<string> {
   const tempDir = await Deno.makeTempDir({ prefix: 'pls-' });
-  
+
   console.log(`📥 Cloning ${cyan(repoUrl)}...`);
-  
+
   const command = new Deno.Command('git', {
     args: ['clone', '--depth', '1', repoUrl, tempDir],
   });
-  
+
   const { code, stderr } = await command.output();
-  
+
   if (code !== 0) {
     const error = new TextDecoder().decode(stderr);
     throw new PlsError(
@@ -27,7 +27,7 @@ async function cloneToTemp(repoUrl: string): Promise<string> {
       'CLONE_ERROR',
     );
   }
-  
+
   return tempDir;
 }
 
@@ -37,7 +37,7 @@ function parseRepoUrl(url: string): { owner: string; repo: string } | null {
     /^https:\/\/github\.com\/([^\/]+)\/([^\/]+?)(\.git)?$/,
     /^git@github\.com:([^\/]+)\/([^\/]+?)(\.git)?$/,
   ];
-  
+
   for (const pattern of patterns) {
     const match = url.match(pattern);
     if (match) {
@@ -47,7 +47,7 @@ function parseRepoUrl(url: string): { owner: string; repo: string } | null {
       };
     }
   }
-  
+
   return null;
 }
 
@@ -125,7 +125,7 @@ async function main(): Promise<void> {
     // Clone remote repository to temp directory
     tempDir = await cloneToTemp(repoUrl);
     workingDir = tempDir;
-    
+
     // Parse owner/repo from URL if not provided
     const parsed = parseRepoUrl(repoUrl);
     if (parsed) {
@@ -240,7 +240,7 @@ async function main(): Promise<void> {
     } else {
       console.error(`\n${red('❌ Unexpected error:')}`, error);
     }
-    
+
     // Cleanup temp directory on error
     if (tempDir) {
       try {
@@ -249,7 +249,7 @@ async function main(): Promise<void> {
         // Ignore cleanup errors
       }
     }
-    
+
     Deno.exit(1);
   }
 }

@@ -2,7 +2,7 @@ import { parseArgs } from '@std/cli/parse-args';
 import { bold, cyan, green, red, yellow } from '@std/fmt/colors';
 import { createStorage } from './storage/mod.ts';
 import { Detector, ReleaseManager, VersionTransition } from './core/mod.ts';
-import type { TransitionTarget, PrereleaseType } from './core/mod.ts';
+import type { TransitionTarget } from './core/mod.ts';
 import { PlsError } from './types.ts';
 
 export function printTransitionHelp(): void {
@@ -80,7 +80,9 @@ export async function handleTransition(args: string[]): Promise<void> {
     // Get last release
     const lastRelease = await storage.getLastRelease();
     if (!lastRelease) {
-      console.error(`${red('❌ Error:')} No previous releases found. Create an initial release first.`);
+      console.error(
+        `${red('❌ Error:')} No previous releases found. Create an initial release first.`,
+      );
       Deno.exit(1);
     }
 

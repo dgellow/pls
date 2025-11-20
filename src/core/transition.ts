@@ -35,12 +35,12 @@ export class VersionTransition {
   private getPrereleaseType(version: string): PrereleaseType | null {
     const parsed = parse(version);
     if (!parsed.prerelease || parsed.prerelease.length === 0) return null;
-    
+
     const prereleaseStr = String(parsed.prerelease[0]);
     if (prereleaseStr === 'alpha') return 'alpha';
     if (prereleaseStr === 'beta') return 'beta';
     if (prereleaseStr === 'rc') return 'rc';
-    
+
     return null;
   }
 
@@ -53,7 +53,6 @@ export class VersionTransition {
     bumpType?: VersionBumpType,
   ): string {
     try {
-      const parsed = parse(currentVersion);
       const isCurrentlyPrerelease = this.isPrerelease(currentVersion);
 
       // Transitioning to stable
@@ -81,7 +80,7 @@ export class VersionTransition {
         // From stable to prerelease, need to bump version
         const base = this.getBaseVersion(currentVersion);
         const bumpedBase = increment(base, bumpType || 'minor');
-        
+
         return format({
           ...bumpedBase,
           prerelease: [target, 0],
@@ -119,7 +118,7 @@ export class VersionTransition {
       }
       const prereleaseType = parsed.prerelease[0];
       const currentBuild = Number(parsed.prerelease[1]) || 0;
-      
+
       return format({
         ...this.getBaseVersion(currentVersion),
         prerelease: [prereleaseType, currentBuild + 1],
@@ -127,7 +126,7 @@ export class VersionTransition {
     } else {
       // In stable, follow conventional commits
       if (!conventionalBumpType) return null;
-      
+
       const parsed = parse(currentVersion);
       const bumped = increment(parsed, conventionalBumpType);
       return format(bumped);

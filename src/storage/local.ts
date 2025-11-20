@@ -23,12 +23,12 @@ export class LocalStorage implements Storage {
         args: ['rev-parse', '--show-toplevel'],
       });
       const { code, stdout } = await command.output();
-      
+
       if (code !== 0) {
         // Not in a git repo, use current directory
         return Deno.cwd();
       }
-      
+
       return new TextDecoder().decode(stdout).trim();
     } catch {
       // Git not available, use current directory

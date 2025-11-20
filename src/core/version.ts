@@ -1,4 +1,3 @@
-import { format, increment, parse } from '@std/semver';
 import type { Commit, VersionBump } from '../types.ts';
 import { PlsError } from '../types.ts';
 import { VersionTransition } from './transition.ts';
