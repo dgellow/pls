@@ -4,11 +4,10 @@ import { PlsError } from '../types.ts';
 export class Detector {
   async getCommitsSince(since: string | null): Promise<Commit[]> {
     try {
-      // Use %x00 (null byte) as delimiter since it can't appear in commit messages
-      const DELIM = '\x00';
+      // Use git's %x00 format specifier - git outputs null bytes, but the arg is plain text
       const args = [
         'log',
-        `--format=%H${DELIM}%s${DELIM}%an${DELIM}%aI`,
+        '--format=%H%x00%s%x00%an%x00%aI',
         '--no-merges',
       ];
 
@@ -33,8 +32,9 @@ export class Detector {
       const output = new TextDecoder().decode(stdout);
       const lines = output.trim().split('\n').filter((line) => line);
 
+      // Split on actual null byte in the output
       return lines.map((line) => {
-        const [sha, message, author, date] = line.split(DELIM);
+        const [sha, message, author, date] = line.split('\x00');
         return {
           sha,
           message,
