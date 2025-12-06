@@ -1,4 +1,4 @@
-import { assertEquals, assertRejects } from '@std/assert';
+import { assertEquals, assertThrows } from '@std/assert';
 import { ReleasePullRequest } from './pull-request.ts';
 import { PlsError } from '../types.ts';
 
@@ -8,14 +8,13 @@ Deno.test('ReleasePullRequest - requires token', () => {
   Deno.env.delete('GITHUB_TOKEN');
 
   try {
-    assertRejects(
-      async () => {
+    assertThrows(
+      () => {
         new ReleasePullRequest({
           owner: 'test',
           repo: 'repo',
           token: undefined,
         });
-        await Promise.resolve(); // Make it async
       },
       PlsError,
       'GitHub token required',
