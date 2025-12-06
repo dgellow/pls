@@ -58,6 +58,40 @@ Deno.test('generateOptions - from prerelease only offers forward progression', (
   assertEquals(stable.disabled, false);
 });
 
+Deno.test('generateOptions - from alpha offers beta, rc, and stable', () => {
+  // When user selects alpha, options should show progression to beta/rc/stable
+  const bump: VersionBump = {
+    from: '0.4.0-alpha.0',
+    to: '0.4.0-alpha.0', // Same version (user selected this)
+    type: 'transition',
+    commits: [],
+  };
+
+  const options = generateOptions('0.4.0-alpha.0', bump);
+
+  // Main option should be current alpha
+  const selected = options.find((o) => o.selected);
+  assertExists(selected);
+  assertEquals(selected.version, '0.4.0-alpha.0');
+
+  // Should offer beta
+  const beta = options.find((o) => o.version === '0.4.0-beta.0');
+  assertExists(beta);
+  assertEquals(beta.disabled, false);
+  assertEquals(beta.label, 'beta');
+
+  // Should offer rc
+  const rc = options.find((o) => o.version === '0.4.0-rc.0');
+  assertExists(rc);
+  assertEquals(rc.disabled, false);
+
+  // Should offer stable (promote to release)
+  const stable = options.find((o) => o.version === '0.4.0');
+  assertExists(stable);
+  assertEquals(stable.disabled, false);
+  assertEquals(stable.label, 'stable');
+});
+
 Deno.test('generateOptionsBlock - creates valid markdown', () => {
   const bump: VersionBump = {
     from: '1.2.3',
