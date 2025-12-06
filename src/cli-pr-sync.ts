@@ -1,8 +1,7 @@
 import { parseArgs } from '@std/cli/parse-args';
 import { bold, cyan, green, red, yellow } from '@std/fmt/colors';
-import { Detector, getSelectedVersion, PRComments, ReleasePullRequest } from './core/mod.ts';
+import { Detector, parseOptionsBlock, PRComments, ReleasePullRequest } from './core/mod.ts';
 import { PlsError } from './types.ts';
-import { getVersion as getVersionFromManifest, hasVersionsManifest } from './versions/mod.ts';
 
 export function printPRSyncHelp(): void {
   console.log(`
@@ -94,34 +93,34 @@ export async function handlePRSync(args: string[]): Promise<void> {
     console.log(`Title: ${cyan(pr.title)}`);
     console.log(`Branch: ${cyan(pr.head.ref)}`);
 
-    // Parse selected version from PR body
-    const selectedVersion = getSelectedVersion(pr.body || '');
-    if (!selectedVersion) {
+    // Parse options block to get selected version and type
+    const parsedOptions = parseOptionsBlock(pr.body || '');
+    if (!parsedOptions || !parsedOptions.selected) {
       console.error(`${red('Error:')} Could not find selected version in PR description`);
       console.error(`The PR may not have been created by pls, or the options block is missing`);
       Deno.exit(1);
     }
 
-    console.log(`Selected version: ${green(selectedVersion)}`);
+    const selectedOption = parsedOptions.selected;
+    const selectedVersion = selectedOption.version;
+    const bumpType = selectedOption.type;
 
-    // Get current version to determine the "from" version
-    let currentVersion: string | null = null;
-    if (await hasVersionsManifest()) {
-      currentVersion = await getVersionFromManifest();
-    }
-    if (!currentVersion) {
-      // Try to extract from PR title
-      const titleMatch = pr.title.match(/v?(\d+\.\d+\.\d+(?:-[a-z]+\.\d+)?)/i);
-      if (titleMatch) {
-        // This is the "to" version, we need to find "from"
-        // For now, use a simple approach - get from deno.json on base branch
-        currentVersion = '0.0.0'; // Fallback
-      }
+    console.log(`Selected version: ${green(selectedVersion)} (${bumpType})`);
+
+    // Extract current version from PR title to check if sync is needed
+    const titleVersionMatch = pr.title.match(/v(\d+\.\d+\.\d+(?:-[a-z]+\.\d+)?)/i);
+    const currentTitleVersion = titleVersionMatch ? titleVersionMatch[1] : null;
+
+    if (currentTitleVersion === selectedVersion) {
+      console.log(yellow('\nNo change detected - PR is already synced to selected version'));
+      return;
     }
 
-    // Determine bump type from version
-    const bumpType = determineBumpType(currentVersion || '0.0.0', selectedVersion);
-    console.log(`Bump type: ${cyan(bumpType)}`);
+    console.log(`Current PR version: ${cyan(currentTitleVersion || 'unknown')}`);
+
+    // Get the base version from deno.json on base branch
+    const fromVersion = await prClient.getBaseVersion(pr.base.ref);
+    console.log(`Base version: ${cyan(fromVersion)}`);
 
     const isDryRun = !parsed.execute;
 
@@ -140,7 +139,7 @@ export async function handlePRSync(args: string[]): Promise<void> {
     await prClient.syncBranch(
       prNumber,
       selectedVersion,
-      currentVersion || '0.0.0',
+      fromVersion,
       bumpType,
     );
     console.log(`Branch synced`);
@@ -153,18 +152,14 @@ export async function handlePRSync(args: string[]): Promise<void> {
     console.log(`PR updated`);
 
     // Post comment about the change
-    const prComments = new PRComments({
-      owner: repoInfo.owner!,
-      repo: repoInfo.repo!,
-      token: parsed.token,
-    });
+    if (currentTitleVersion && currentTitleVersion !== selectedVersion) {
+      const prComments = new PRComments({
+        owner: repoInfo.owner!,
+        repo: repoInfo.repo!,
+        token: parsed.token,
+      });
 
-    // Extract old version from title
-    const oldVersionMatch = pr.title.match(/v?(\d+\.\d+\.\d+(?:-[a-z]+\.\d+)?)/i);
-    const oldVersion = oldVersionMatch ? oldVersionMatch[1] : 'unknown';
-
-    if (oldVersion !== selectedVersion) {
-      await prComments.commentSelectionChanged(prNumber, oldVersion, selectedVersion);
+      await prComments.commentSelectionChanged(prNumber, currentTitleVersion, selectedVersion);
       console.log(`Comment posted`);
     }
 
@@ -180,25 +175,4 @@ export async function handlePRSync(args: string[]): Promise<void> {
     }
     Deno.exit(1);
   }
-}
-
-/**
- * Determine bump type from version strings.
- */
-function determineBumpType(
-  from: string,
-  to: string,
-): 'major' | 'minor' | 'patch' | 'transition' {
-  // If "to" is a prerelease, it's a transition
-  if (to.includes('-alpha') || to.includes('-beta') || to.includes('-rc')) {
-    return 'transition';
-  }
-
-  // Compare version parts
-  const fromParts = from.split('-')[0].split('.').map(Number);
-  const toParts = to.split('-')[0].split('.').map(Number);
-
-  if (toParts[0] > fromParts[0]) return 'major';
-  if (toParts[1] > fromParts[1]) return 'minor';
-  return 'patch';
 }

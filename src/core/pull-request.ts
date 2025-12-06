@@ -553,4 +553,20 @@ ${changelog}
 
     return body.substring(0, startIndex) + newOptionsBlock + body.substring(endIndex);
   }
+
+  /**
+   * Get the version from deno.json on the specified branch.
+   */
+  async getBaseVersion(branch: string): Promise<string> {
+    try {
+      const file = await this.request<{ content: string }>(
+        `/repos/${this.owner}/${this.repo}/contents/deno.json?ref=${branch}`,
+      );
+      const content = atob(file.content.replace(/\n/g, ''));
+      const denoJson = JSON.parse(content);
+      return denoJson.version || '0.0.0';
+    } catch {
+      return '0.0.0';
+    }
+  }
 }
