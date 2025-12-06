@@ -197,7 +197,8 @@ export function parseOptionsBlock(body: string): ParsedOptions | null {
 
     options.push(option);
 
-    if (isSelected && !isDisabled) {
+    // Pick the first selected non-disabled option
+    if (isSelected && !isDisabled && !selected) {
       selected = option;
     }
   }
