@@ -14,6 +14,8 @@ import {
 import { PlsError } from './types.ts';
 import { handleTransition } from './cli-transition.ts';
 import { handlePR } from './cli-pr.ts';
+import { handlePRSync } from './cli-pr-sync.ts';
+import { PRComments } from './core/mod.ts';
 import denoJson from '../deno.json' with { type: 'json' };
 
 const VERSION = denoJson.version;
@@ -107,10 +109,12 @@ ${bold('pls')} - Release automation tool
 ${bold('USAGE:')}
   pls [REPO_URL] [OPTIONS]
   pls pr [OPTIONS]
+  pls pr sync --pr=<number> [OPTIONS]
   pls transition <TARGET> [OPTIONS]
 
 ${bold('COMMANDS:')}
   pr                   Create or update a release pull request
+  pr sync              Sync a release PR with the selected version
   transition           Transition between release stages (alpha, beta, rc, stable)
 
 ${bold('ARGUMENTS:')}
@@ -121,6 +125,7 @@ ${bold('OPTIONS:')}
   --tag-strategy <s>   Tag creation: github (API, default) or git (CLI)
   --execute            Actually create the release (default is dry-run)
   --force              Skip safety checks and create release
+  --pr <number>        Post comment to this PR on success/failure
   --owner <owner>      GitHub repository owner (auto-detected from git remote)
   --repo <repo>        GitHub repository name (auto-detected from git remote)
   --token <token>      GitHub token (or set GITHUB_TOKEN env var)
@@ -134,6 +139,9 @@ ${bold('EXAMPLES:')}
   # Actually create a release
   pls --execute
 
+  # Create release and comment on PR
+  pls --storage=github --execute --pr=123
+
   # Transition to beta
   pls transition beta --execute
 
@@ -145,6 +153,11 @@ ${bold('EXAMPLES:')}
 async function main(): Promise<void> {
   // Check for subcommands first
   if (Deno.args.length > 0 && Deno.args[0] === 'pr') {
+    // Check for pr sync subcommand
+    if (Deno.args.length > 1 && Deno.args[1] === 'sync') {
+      await handlePRSync(Deno.args.slice(2));
+      return;
+    }
     await handlePR(Deno.args.slice(1));
     return;
   }
@@ -156,12 +169,19 @@ async function main(): Promise<void> {
 
   const args = parseArgs(Deno.args, {
     boolean: ['help', 'version', 'execute', 'force'],
-    string: ['storage', 'owner', 'repo', 'token', 'tag-strategy'],
+    string: ['storage', 'owner', 'repo', 'token', 'tag-strategy', 'pr'],
     default: {
       storage: 'local',
       'tag-strategy': 'github',
     },
   });
+
+  // Parse PR number if provided
+  const prNumber = args.pr ? parseInt(args.pr, 10) : null;
+  if (args.pr && (isNaN(prNumber!) || prNumber! <= 0)) {
+    console.error(`${red('Error:')} Invalid PR number: ${args.pr}`);
+    Deno.exit(1);
+  }
 
   if (args.help) {
     printHelp();
@@ -277,6 +297,32 @@ async function main(): Promise<void> {
         if (release.url) {
           console.log(release.url);
         }
+
+        // Post comment on PR if requested
+        if (prNumber && repoInfo.owner && repoInfo.repo) {
+          try {
+            const prComments = new PRComments({
+              owner: repoInfo.owner,
+              repo: repoInfo.repo,
+              token: args.token,
+            });
+            await prComments.commentReleaseSuccess(
+              prNumber,
+              release.version,
+              release.tag,
+              release.url,
+            );
+            console.log(`Posted success comment on PR #${prNumber}`);
+          } catch (commentError) {
+            console.warn(
+              yellow(
+                `Warning: Failed to post PR comment: ${
+                  commentError instanceof Error ? commentError.message : String(commentError)
+                }`,
+              ),
+            );
+          }
+        }
       }
       return;
     }
@@ -336,6 +382,32 @@ async function main(): Promise<void> {
       if (release.url) {
         console.log(release.url);
       }
+
+      // Post comment on PR if requested
+      if (prNumber && repoInfo.owner && repoInfo.repo) {
+        try {
+          const prComments = new PRComments({
+            owner: repoInfo.owner,
+            repo: repoInfo.repo,
+            token: args.token,
+          });
+          await prComments.commentReleaseSuccess(
+            prNumber,
+            release.version,
+            release.tag,
+            release.url,
+          );
+          console.log(`Posted success comment on PR #${prNumber}`);
+        } catch (commentError) {
+          console.warn(
+            yellow(
+              `Warning: Failed to post PR comment: ${
+                commentError instanceof Error ? commentError.message : String(commentError)
+              }`,
+            ),
+          );
+        }
+      }
     }
 
     // Cleanup temp directory
@@ -347,6 +419,12 @@ async function main(): Promise<void> {
       }
     }
   } catch (error) {
+    const errorMessage = error instanceof PlsError
+      ? error.message
+      : error instanceof Error
+      ? error.message
+      : String(error);
+
     if (error instanceof PlsError) {
       console.error(`\n${red('Error:')} ${error.message}`);
       if (error.details) {
@@ -354,6 +432,25 @@ async function main(): Promise<void> {
       }
     } else {
       console.error(`\n${red('Unexpected error:')}`, error);
+    }
+
+    // Post failure comment on PR if requested
+    if (prNumber && repoInfo.owner && repoInfo.repo && args.execute) {
+      try {
+        const prComments = new PRComments({
+          owner: repoInfo.owner,
+          repo: repoInfo.repo,
+          token: args.token,
+        });
+        await prComments.commentReleaseFailure(
+          prNumber,
+          'unknown', // Version not available in error context
+          errorMessage,
+        );
+        console.log(`Posted failure comment on PR #${prNumber}`);
+      } catch {
+        // Ignore comment posting errors during failure handling
+      }
     }
 
     // Cleanup temp directory on error
