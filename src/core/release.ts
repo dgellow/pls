@@ -253,23 +253,9 @@ export class ReleaseManager {
         release.sha = new TextDecoder().decode(amendedShaResult.stdout).trim();
       }
 
-      // Create git tag locally (on the new commit)
-      const tagCommand = new Deno.Command('git', {
-        args: ['tag', '-a', tag, '-m', `Release ${tag}`],
-      });
-      const { code, stderr } = await tagCommand.output();
-
-      if (code !== 0) {
-        const error = new TextDecoder().decode(stderr);
-        throw new PlsError(
-          `Failed to create git tag: ${error}`,
-          'GIT_TAG_ERROR',
-        );
-      }
-
-      // Push commits and tag to remote
+      // Push commit to remote (tag will be created by storage.saveRelease via API)
       const pushCommand = new Deno.Command('git', {
-        args: ['push', 'origin', 'HEAD', '--follow-tags'],
+        args: ['push', 'origin', 'HEAD'],
       });
       const pushResult = await pushCommand.output();
 
@@ -278,7 +264,7 @@ export class ReleaseManager {
         console.warn(`Warning: Failed to push to remote: ${error}`);
       }
 
-      // Save release to storage
+      // Save release to storage (creates GitHub release + tag via API)
       await this.storage.saveRelease(release);
 
       // Update CHANGELOG.md
