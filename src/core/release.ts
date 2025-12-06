@@ -4,6 +4,8 @@ import { ensureFile } from '@std/fs';
 import { updateAllVersions } from '../manifest/mod.ts';
 import { setVersion as setVersionsManifest } from '../versions/mod.ts';
 
+export type TagStrategy = 'github' | 'git';
+
 export class ReleaseManager {
   constructor(private storage: Storage) {}
 
@@ -184,6 +186,7 @@ export class ReleaseManager {
     bump: VersionBump,
     sha: string,
     dryRun = false,
+    tagStrategy: TagStrategy = 'github',
   ): Promise<Release> {
     const tag = `v${bump.to}`;
     const notes = this.generateReleaseNotes(bump);
@@ -253,18 +256,45 @@ export class ReleaseManager {
         release.sha = new TextDecoder().decode(amendedShaResult.stdout).trim();
       }
 
-      // Push commit to remote (tag will be created by storage.saveRelease via API)
-      const pushCommand = new Deno.Command('git', {
-        args: ['push', 'origin', 'HEAD'],
-      });
-      const pushResult = await pushCommand.output();
+      if (tagStrategy === 'git') {
+        // Create tag locally using git CLI
+        const tagCommand = new Deno.Command('git', {
+          args: ['tag', '-a', tag, '-m', `Release ${tag}`],
+        });
+        const { code, stderr } = await tagCommand.output();
 
-      if (pushResult.code !== 0) {
-        const error = new TextDecoder().decode(pushResult.stderr);
-        console.warn(`Warning: Failed to push to remote: ${error}`);
+        if (code !== 0) {
+          const error = new TextDecoder().decode(stderr);
+          throw new PlsError(
+            `Failed to create git tag: ${error}`,
+            'GIT_TAG_ERROR',
+          );
+        }
+
+        // Push commit and tag to remote
+        const pushCommand = new Deno.Command('git', {
+          args: ['push', 'origin', 'HEAD', '--follow-tags'],
+        });
+        const pushResult = await pushCommand.output();
+
+        if (pushResult.code !== 0) {
+          const error = new TextDecoder().decode(pushResult.stderr);
+          console.warn(`Warning: Failed to push to remote: ${error}`);
+        }
+      } else {
+        // Push commit only (tag will be created by storage.saveRelease via API)
+        const pushCommand = new Deno.Command('git', {
+          args: ['push', 'origin', 'HEAD'],
+        });
+        const pushResult = await pushCommand.output();
+
+        if (pushResult.code !== 0) {
+          const error = new TextDecoder().decode(pushResult.stderr);
+          console.warn(`Warning: Failed to push to remote: ${error}`);
+        }
       }
 
-      // Save release to storage (creates GitHub release + tag via API)
+      // Save release to storage (creates GitHub release, and tag if using github strategy)
       await this.storage.saveRelease(release);
 
       // Update CHANGELOG.md

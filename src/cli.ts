@@ -71,6 +71,7 @@ ${bold('ARGUMENTS:')}
 
 ${bold('OPTIONS:')}
   --storage <type>     Storage backend: local (default) or github
+  --tag-strategy <s>   Tag creation: github (API, default) or git (CLI)
   --execute            Actually create the release (default is dry-run)
   --force              Skip safety checks and create release
   --owner <owner>      GitHub repository owner (auto-detected from git remote)
@@ -108,9 +109,10 @@ async function main(): Promise<void> {
 
   const args = parseArgs(Deno.args, {
     boolean: ['help', 'version', 'execute', 'force'],
-    string: ['storage', 'owner', 'repo', 'token'],
+    string: ['storage', 'owner', 'repo', 'token', 'tag-strategy'],
     default: {
       storage: 'local',
+      'tag-strategy': 'github',
     },
   });
 
@@ -219,10 +221,12 @@ async function main(): Promise<void> {
       console.log(yellow('\n🔍 DRY RUN MODE (use --execute to create release)\n'));
     }
 
+    const tagStrategy = args['tag-strategy'] as 'github' | 'git';
     const release = await releaseManager.createRelease(
       bump,
       changes.currentSha,
       isDryRun,
+      tagStrategy,
     );
 
     if (!isDryRun) {
