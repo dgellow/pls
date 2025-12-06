@@ -328,3 +328,12 @@ Before merging:
 - [ ] `./scripts/lint` passes
 - [ ] `./scripts/test` passes
 - [ ] Manual test with `--execute` on a test repo
+
+## Git Workflow
+
+**Always rebase on main before pushing.** This keeps history clean and avoids merge commits.
+
+```bash
+git fetch origin main && git rebase origin/main
+git push --force-with-lease
+```
