@@ -84,7 +84,9 @@ async function resolveWorkspaceGlobs(
       const memberPath = join(root, pattern);
       const manifest = await createManifest(memberPath);
       if (manifest) {
-        members.push({ path: pattern, manifest });
+        // Normalize path (remove leading ./)
+        const normalizedPath = pattern.replace(/^\.\//, '');
+        members.push({ path: normalizedPath, manifest });
       }
       continue;
     }
