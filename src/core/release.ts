@@ -182,6 +182,78 @@ export class ReleaseManager {
     console.log(`📦 Updated manifest versions`);
   }
 
+  /**
+   * Create a release from an existing release commit.
+   * This is used when a release PR is merged - the commit already has the correct
+   * version in the manifest files, so we just need to create the tag and GitHub release.
+   * This prevents the double-bump bug where the version gets recalculated.
+   */
+  async createReleaseFromCommit(
+    version: string,
+    sha: string,
+    dryRun = false,
+    tagStrategy: TagStrategy = 'github',
+  ): Promise<Release> {
+    const tag = `v${version}`;
+
+    const release: Release = {
+      version,
+      tag,
+      sha,
+      createdAt: new Date(),
+      notes: `Release ${version}`,
+    };
+
+    if (dryRun) {
+      console.log('🏷️  Dry run - would create release:');
+      console.log(`   Version: ${release.version}`);
+      console.log(`   Tag: ${release.tag}`);
+      console.log(`   SHA: ${release.sha}`);
+      return release;
+    }
+
+    try {
+      if (tagStrategy === 'git') {
+        // Create tag locally using git CLI
+        const tagCommand = new Deno.Command('git', {
+          args: ['tag', '-a', tag, '-m', `Release ${tag}`],
+        });
+        const { code, stderr } = await tagCommand.output();
+
+        if (code !== 0) {
+          const error = new TextDecoder().decode(stderr);
+          throw new PlsError(
+            `Failed to create git tag: ${error}`,
+            'GIT_TAG_ERROR',
+          );
+        }
+
+        // Push tag to remote
+        const pushCommand = new Deno.Command('git', {
+          args: ['push', 'origin', tag],
+        });
+        const pushResult = await pushCommand.output();
+
+        if (pushResult.code !== 0) {
+          const error = new TextDecoder().decode(pushResult.stderr);
+          console.warn(`Warning: Failed to push tag to remote: ${error}`);
+        }
+      }
+
+      // Save release to storage (creates GitHub release, and tag if using github strategy)
+      await this.storage.saveRelease(release);
+
+      return release;
+    } catch (error) {
+      if (error instanceof PlsError) throw error;
+      throw new PlsError(
+        `Failed to create release: ${error instanceof Error ? error.message : String(error)}`,
+        'RELEASE_ERROR',
+        error,
+      );
+    }
+  }
+
   async createRelease(
     bump: VersionBump,
     sha: string,
