@@ -1,6 +1,3 @@
 {
-  ".": {
-    "version": "0.3.0",
-    "sha": "5f836a76a6ddf2ccba7e331ffd9cc00615da0b12"
-  }
+  ".": "0.4.0-alpha.0"
 }
