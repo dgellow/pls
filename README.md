@@ -64,21 +64,21 @@ Create release PRs with selectable version options:
 
 ```bash
 # Create/update a release PR (dry run)
-pls pr
+pls prep
 
 # Create the PR
-pls pr --execute
+pls prep --execute
 
-# Sync PR when user changes selection
-pls pr sync --pr=123
+# Sync PR when user changes selection (triggered by workflow)
+pls prep --github-pr=123 --execute
 ```
 
 ### How It Works
 
-1. `pls pr --execute` creates a PR with version options in the description
+1. `pls prep --execute` creates a PR with version options in the description
 2. User selects desired version by checking a checkbox
-3. GitHub workflow runs `pls pr sync --pr=123` to apply the selection
-4. On merge, `pls --storage=github --execute --pr=123` creates the release and comments
+3. GitHub workflow runs `pls prep --github-pr=123 --execute` to apply the selection
+4. On merge, `pls --storage=github --execute` creates the release
 
 ### PR Description Format
 
@@ -89,19 +89,22 @@ The PR description includes a version selection block in a collapsible section:
 <summary>Version Selection</summary>
 
 <!-- pls:options -->
+
 **Current: 1.3.0** (minor) <!-- pls:v:1.3.0:minor:current -->
 
 Switch to:
+
 - [ ] 1.3.0-alpha.0 (alpha) <!-- pls:v:1.3.0-alpha.0:transition -->
 - [ ] 1.3.0-beta.0 (beta) <!-- pls:v:1.3.0-beta.0:transition -->
 - [ ] 1.3.0-rc.0 (rc) <!-- pls:v:1.3.0-rc.0:transition -->
+
 <!-- pls:options:end -->
 
 </details>
 ```
 
-The current selection is displayed as text (no checkbox to avoid double-click issues).
-Alternatives have checkboxes - checking one triggers a sync workflow.
+The current selection is displayed as text (no checkbox to avoid double-click issues). Alternatives
+have checkboxes - checking one triggers a sync workflow.
 
 ### Single Commit Principle
 

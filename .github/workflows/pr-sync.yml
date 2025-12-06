@@ -29,6 +29,6 @@ jobs:
           deno-version: v2.x
 
       - name: Sync PR with selected version
-        run: deno run -A src/cli.ts pr sync --pr=${{ github.event.pull_request.number }} --execute
+        run: deno run -A src/cli.ts prep --github-pr=${{ github.event.pull_request.number }} --execute
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
