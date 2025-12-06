@@ -187,7 +187,7 @@ function calculateBump(commits: Commit[]): BumpType | null {
 Every module needs tests. Test files live next to implementation: `foo.ts` → `foo_test.ts`
 
 ```bash
-deno test -A              # Run all tests
+./scripts/test            # Run all tests
 deno test -A src/core/    # Run specific directory
 ```
 
@@ -253,19 +253,21 @@ pls --storage=github
 ## Development Commands
 
 ```bash
+# Setup
+./scripts/bootstrap         # Install deno if needed, cache dependencies
+
 # Run CLI
 deno run -A src/cli.ts
 deno run -A src/cli.ts --help
 deno run -A src/cli.ts pr --execute
 
-# Quality checks
-deno fmt                    # Format code
-deno lint                   # Lint code
-deno check src/mod.ts       # Type check
+# Quality checks (ALWAYS use scripts)
+./scripts/lint              # Format check + lint + type check
+./scripts/format            # Format code
+./scripts/test              # Run tests
 
-# Testing
-deno test -A                # All tests
-deno test -A --watch        # Watch mode
+# CI (runs lint + test)
+deno task ci
 ```
 
 ## Decision Log
@@ -306,7 +308,6 @@ Before implementing:
 
 Before merging:
 
-- [ ] `deno fmt` passes
-- [ ] `deno lint` passes
-- [ ] `deno test -A` passes
+- [ ] `./scripts/lint` passes
+- [ ] `./scripts/test` passes
 - [ ] Manual test with `--execute` on a test repo
