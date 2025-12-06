@@ -1,5 +1,6 @@
 import type { VersionBump } from '../types.ts';
 import { PlsError } from '../types.ts';
+import { generateReleaseCommitMessage } from './release-metadata.ts';
 
 export interface PullRequestOptions {
   owner: string;
@@ -215,7 +216,12 @@ export class ReleasePullRequest {
     _changelog: string,
     baseSha: string,
   ): Promise<void> {
-    const tag = `v${bump.to}`;
+    // Generate structured commit message with embedded metadata
+    const commitMessage = generateReleaseCommitMessage({
+      version: bump.to,
+      from: bump.from,
+      type: bump.type,
+    });
 
     // Get base tree
     const baseCommit = await this.request<{ tree: { sha: string } }>(
@@ -303,13 +309,13 @@ export class ReleasePullRequest {
       },
     );
 
-    // Create commit
+    // Create commit with structured metadata
     const commit = await this.request<{ sha: string }>(
       `/repos/${this.owner}/${this.repo}/git/commits`,
       {
         method: 'POST',
         body: JSON.stringify({
-          message: `chore: release ${tag}`,
+          message: commitMessage,
           tree: tree.sha,
           parents: [baseSha],
         }),
