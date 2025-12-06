@@ -104,10 +104,10 @@ export class ReleasePullRequest {
     const body = this.generatePRBody(bump, changelog);
 
     if (dryRun) {
-      console.log(`🔀 Would create/update release PR:`);
-      console.log(`   Title: ${title}`);
-      console.log(`   Branch: ${this.releaseBranch}`);
-      console.log(`   Base: ${this.baseBranch}`);
+      console.log(`Would create/update release PR:`);
+      console.log(`  Title: ${title}`);
+      console.log(`  Branch: ${this.releaseBranch}`);
+      console.log(`  Base: ${this.baseBranch}`);
       return {
         number: 0,
         url: '',
@@ -129,7 +129,7 @@ export class ReleasePullRequest {
           body: JSON.stringify({ title, body }),
         },
       );
-      console.log(`🔄 Updated release PR #${existing.number}`);
+      console.log(`Updated release PR #${existing.number}`);
       return existing;
     }
 
@@ -148,7 +148,7 @@ export class ReleasePullRequest {
       },
     );
 
-    console.log(`🆕 Created release PR #${pr.number}`);
+    console.log(`Created release PR #${pr.number}`);
     return {
       number: pr.number,
       url: pr.html_url,

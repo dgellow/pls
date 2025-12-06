@@ -61,9 +61,9 @@ export async function handlePR(args: string[]): Promise<void> {
           owner: repoInfo.owner || detected.owner,
           repo: repoInfo.repo || detected.repo,
         };
-        console.log(`📦 Repository: ${cyan(`${repoInfo.owner}/${repoInfo.repo}`)}`);
+        console.log(`Repository: ${cyan(`${repoInfo.owner}/${repoInfo.repo}`)}`);
       } else {
-        console.error(`${red('❌ Error:')} Could not detect repository. Use --owner and --repo`);
+        console.error(`${red('Error:')} Could not detect repository. Use --owner and --repo`);
         Deno.exit(1);
       }
     }
@@ -77,7 +77,7 @@ export async function handlePR(args: string[]): Promise<void> {
       currentVersion = await getVersionFromManifest();
       const manifestSha = await getShaFromManifest();
       if (currentVersion) {
-        console.log(`📋 Current version (from .pls/versions.json): ${cyan(currentVersion)}`);
+        console.log(`Current version (from .pls/versions.json): ${cyan(currentVersion)}`);
         if (manifestSha) {
           // Create synthetic release for change detection
           lastRelease = {
@@ -86,7 +86,7 @@ export async function handlePR(args: string[]): Promise<void> {
             sha: manifestSha,
             createdAt: new Date(),
           };
-          console.log(`📋 Last release SHA: ${cyan(manifestSha.substring(0, 7))}`);
+          console.log(`Last release SHA: ${cyan(manifestSha.substring(0, 7))}`);
         }
       }
     }
@@ -104,7 +104,7 @@ export async function handlePR(args: string[]): Promise<void> {
         if (!currentVersion) {
           currentVersion = lastRelease.version;
         }
-        console.log(`📌 Current version (from GitHub): ${cyan(lastRelease.tag)}`);
+        console.log(`Current version (from GitHub): ${cyan(lastRelease.tag)}`);
       }
     }
 
@@ -113,34 +113,34 @@ export async function handlePR(args: string[]): Promise<void> {
       const version = new Version();
       currentVersion = await version.getCurrentVersion();
       if (currentVersion) {
-        console.log(`📦 Current version (from manifest): ${cyan(currentVersion)}`);
+        console.log(`Current version (from manifest): ${cyan(currentVersion)}`);
       } else {
         currentVersion = '0.0.0';
-        console.log(`📦 No version found, starting from ${cyan('0.0.0')}`);
+        console.log(`No version found, starting from ${cyan('0.0.0')}`);
       }
     }
 
     // Detect changes since last release
-    console.log(`\n🔍 Detecting changes...`);
+    console.log(`\nDetecting changes...`);
     const changes = await detector.detectChanges(lastRelease);
 
     if (!changes.hasChanges) {
-      console.log(yellow('ℹ️  No changes detected since last release'));
+      console.log(yellow('No changes detected since last release'));
       return;
     }
 
-    console.log(`📝 Found ${green(String(changes.commits.length))} commits`);
+    console.log(`Found ${green(String(changes.commits.length))} commits`);
 
     // Determine version bump
     const version = new Version();
     const bump = await version.determineVersionBump(currentVersion, changes.commits);
 
     if (!bump) {
-      console.log(yellow('ℹ️  No version bump needed'));
+      console.log(yellow('No version bump needed'));
       return;
     }
 
-    console.log(`📊 Version bump: ${cyan(bump.from)} → ${green(bump.to)} (${bump.type})`);
+    console.log(`Version bump: ${cyan(bump.from)} -> ${green(bump.to)} (${bump.type})`);
 
     // Generate changelog
     const releaseManager = new ReleaseManager(storage);
@@ -150,7 +150,7 @@ export async function handlePR(args: string[]): Promise<void> {
     const isDryRun = !parsed.execute;
 
     if (isDryRun) {
-      console.log(yellow('\n🔍 DRY RUN MODE (use --execute to create PR)\n'));
+      console.log(yellow('\nDRY RUN (use --execute to create PR)\n'));
     }
 
     const pr = new ReleasePullRequest({
@@ -163,16 +163,16 @@ export async function handlePR(args: string[]): Promise<void> {
     const result = await pr.createOrUpdate(bump, changelog, isDryRun);
 
     if (!isDryRun && result.url) {
-      console.log(`\n✅ Release PR ready: ${green(result.url)}`);
+      console.log(`\nRelease PR ready: ${green(result.url)}`);
     }
   } catch (error) {
     if (error instanceof PlsError) {
-      console.error(`\n${red('❌ Error:')} ${error.message}`);
+      console.error(`\n${red('Error:')} ${error.message}`);
       if (error.details) {
         console.error(`${red('Details:')}`, error.details);
       }
     } else {
-      console.error(`\n${red('❌ Unexpected error:')}`, error);
+      console.error(`\n${red('Unexpected error:')}`, error);
     }
     Deno.exit(1);
   }
