@@ -13,7 +13,7 @@
     "fmt:check": "deno fmt --check",
     "lint": "deno lint",
     "check": "deno check src/mod.ts src/cli.ts",
-    "ci": "deno fmt --check && deno lint && deno check src/mod.ts src/cli.ts && deno test -A",
+    "ci": "./scripts/lint",
     "build:npm": "deno run -A scripts/build_npm.ts"
   },
   "fmt": {

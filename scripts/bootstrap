@@ -1,0 +1,7 @@
+#!/bin/sh
+# Bootstrap the project (install dependencies, setup environment)
+set -e
+
+# Deno caches dependencies automatically on first run
+# This ensures all dependencies are downloaded
+deno cache src/mod.ts src/cli.ts
