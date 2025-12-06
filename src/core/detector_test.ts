@@ -21,6 +21,11 @@ async function setupTestRepo(): Promise<string> {
     cwd: tempDir,
   }).output();
 
+  await new Deno.Command('git', {
+    args: ['config', 'commit.gpgsign', 'false'],
+    cwd: tempDir,
+  }).output();
+
   // Create initial commit
   await Deno.writeTextFile(`${tempDir}/README.md`, 'Initial commit');
   await new Deno.Command('git', {

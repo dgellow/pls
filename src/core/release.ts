@@ -228,6 +228,15 @@ export class ReleaseManager {
       });
       await commitCommand.output();
 
+      // Get the new commit SHA (after release commit)
+      const shaCommand = new Deno.Command('git', {
+        args: ['rev-parse', 'HEAD'],
+      });
+      const shaResult = await shaCommand.output();
+      if (shaResult.code === 0) {
+        release.sha = new TextDecoder().decode(shaResult.stdout).trim();
+      }
+
       // Create git tag locally (on the new commit)
       const tagCommand = new Deno.Command('git', {
         args: ['tag', '-a', tag, '-m', `Release ${tag}`],
