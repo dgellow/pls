@@ -6,6 +6,7 @@ on:
 
 permissions:
   contents: write
+  pull-requests: write
 
 jobs:
   release:
@@ -19,7 +20,23 @@ jobs:
         with:
           deno-version: v2.x
 
-      - name: Run pls
+      - name: Check if release commit
+        id: check
+        run: |
+          if git log -1 --pretty=%B | grep -q "^chore: release v"; then
+            echo "is_release=true" >> $GITHUB_OUTPUT
+          else
+            echo "is_release=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create release (on release commit)
+        if: steps.check.outputs.is_release == 'true'
         run: deno run -A src/cli.ts --storage=github --execute
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create/update release PR (on regular commit)
+        if: steps.check.outputs.is_release == 'false'
+        run: deno run -A src/cli.ts pr --execute
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -6,6 +6,7 @@ import { createStorage } from './storage/mod.ts';
 import { Detector, ReleaseManager, Version } from './core/mod.ts';
 import { PlsError } from './types.ts';
 import { handleTransition } from './cli-transition.ts';
+import { handlePR } from './cli-pr.ts';
 
 const VERSION = '0.1.0';
 
@@ -57,9 +58,11 @@ ${bold('pls')} - Release automation tool
 
 ${bold('USAGE:')}
   pls [REPO_URL] [OPTIONS]
+  pls pr [OPTIONS]
   pls transition <TARGET> [OPTIONS]
 
 ${bold('COMMANDS:')}
+  pr                   Create or update a release pull request
   transition           Transition between release stages (alpha, beta, rc, stable)
 
 ${bold('ARGUMENTS:')}
@@ -92,6 +95,11 @@ ${bold('EXAMPLES:')}
 
 async function main(): Promise<void> {
   // Check for subcommands first
+  if (Deno.args.length > 0 && Deno.args[0] === 'pr') {
+    await handlePR(Deno.args.slice(1));
+    return;
+  }
+
   if (Deno.args.length > 0 && Deno.args[0] === 'transition') {
     await handleTransition(Deno.args.slice(1));
     return;
