@@ -12,7 +12,6 @@ import {
   Version,
 } from './core/mod.ts';
 import { PlsError } from './types.ts';
-import type { VersionBump } from './types.ts';
 import { handleTransition } from './cli-transition.ts';
 import { handlePR } from './cli-pr.ts';
 import denoJson from '../deno.json' with { type: 'json' };
