@@ -1,5 +1,6 @@
-# Local PLS state
-.pls/
+# Local PLS state (but track versions.json)
+.pls/*
+!.pls/versions.json
 
 # Deno generated files
 deno.lock
