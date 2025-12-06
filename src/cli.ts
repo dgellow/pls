@@ -13,8 +13,7 @@ import {
 } from './core/mod.ts';
 import { PlsError } from './types.ts';
 import { handleTransition } from './cli-transition.ts';
-import { handlePR } from './cli-pr.ts';
-import { handlePRSync } from './cli-pr-sync.ts';
+import { handlePrep } from './cli-prep.ts';
 import { PRComments } from './core/mod.ts';
 import denoJson from '../deno.json' with { type: 'json' };
 
@@ -108,13 +107,11 @@ ${bold('pls')} - Release automation tool
 
 ${bold('USAGE:')}
   pls [REPO_URL] [OPTIONS]
-  pls pr [OPTIONS]
-  pls pr sync --pr=<number> [OPTIONS]
+  pls prep [OPTIONS]
   pls transition <TARGET> [OPTIONS]
 
 ${bold('COMMANDS:')}
-  pr                   Create or update a release pull request
-  pr sync              Sync a release PR with the selected version
+  prep                 Prepare a release (create/update PR or sync selection)
   transition           Transition between release stages (alpha, beta, rc, stable)
 
 ${bold('ARGUMENTS:')}
@@ -152,13 +149,8 @@ ${bold('EXAMPLES:')}
 
 async function main(): Promise<void> {
   // Check for subcommands first
-  if (Deno.args.length > 0 && Deno.args[0] === 'pr') {
-    // Check for pr sync subcommand
-    if (Deno.args.length > 1 && Deno.args[1] === 'sync') {
-      await handlePRSync(Deno.args.slice(2));
-      return;
-    }
-    await handlePR(Deno.args.slice(1));
+  if (Deno.args.length > 0 && Deno.args[0] === 'prep') {
+    await handlePrep(Deno.args.slice(1));
     return;
   }
 
