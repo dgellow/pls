@@ -3,8 +3,27 @@ import { dirname, join } from '@std/path';
 
 const VERSIONS_FILE = '.pls/versions.json';
 
+export interface VersionEntry {
+  version: string;
+  sha?: string;
+}
+
 export interface VersionsManifest {
-  [path: string]: string;
+  [path: string]: string | VersionEntry;
+}
+
+/**
+ * Get version string from entry (handles both old string format and new object format)
+ */
+function getVersionFromEntry(entry: string | VersionEntry): string {
+  return typeof entry === 'string' ? entry : entry.version;
+}
+
+/**
+ * Get SHA from entry if available
+ */
+function getShaFromEntry(entry: string | VersionEntry): string | undefined {
+  return typeof entry === 'string' ? undefined : entry.sha;
 }
 
 /**
@@ -43,7 +62,22 @@ export async function getVersion(
   root: string = Deno.cwd(),
 ): Promise<string | null> {
   const versions = await readVersions(root);
-  return versions[path] ?? null;
+  const entry = versions[path];
+  if (!entry) return null;
+  return getVersionFromEntry(entry);
+}
+
+/**
+ * Get SHA for a specific path (use "." for root package).
+ */
+export async function getSha(
+  path: string = '.',
+  root: string = Deno.cwd(),
+): Promise<string | null> {
+  const versions = await readVersions(root);
+  const entry = versions[path];
+  if (!entry) return null;
+  return getShaFromEntry(entry) ?? null;
 }
 
 /**
@@ -53,9 +87,21 @@ export async function setVersion(
   version: string,
   path: string = '.',
   root: string = Deno.cwd(),
+  sha?: string,
 ): Promise<void> {
   const versions = await readVersions(root);
-  versions[path] = version;
+  if (sha) {
+    versions[path] = { version, sha };
+  } else {
+    // Keep existing SHA if present, or use simple format
+    const existing = versions[path];
+    const existingSha = existing ? getShaFromEntry(existing) : undefined;
+    if (existingSha) {
+      versions[path] = { version, sha: existingSha };
+    } else {
+      versions[path] = version;
+    }
+  }
   await writeVersions(versions, root);
 }
 

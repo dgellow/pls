@@ -3,7 +3,12 @@ import { bold, cyan, green, red, yellow } from '@std/fmt/colors';
 import { createStorage } from './storage/mod.ts';
 import { Detector, ReleaseManager, ReleasePullRequest, Version } from './core/mod.ts';
 import { PlsError } from './types.ts';
-import { getVersion as getVersionFromManifest, hasVersionsManifest } from './versions/mod.ts';
+import {
+  getSha as getShaFromManifest,
+  getVersion as getVersionFromManifest,
+  hasVersionsManifest,
+} from './versions/mod.ts';
+import type { Release } from './types.ts';
 
 export function printPRHelp(): void {
   console.log(`
@@ -63,14 +68,26 @@ export async function handlePR(args: string[]): Promise<void> {
       }
     }
 
-    // Get current version - priority: .pls/versions.json > GitHub releases > deno.json
+    // Get current version and SHA - priority: .pls/versions.json > GitHub releases > deno.json
     let currentVersion: string | null = null;
+    let lastRelease: Release | null = null;
 
-    // Try .pls/versions.json first
+    // Try .pls/versions.json first (includes SHA for accurate commit range)
     if (await hasVersionsManifest()) {
       currentVersion = await getVersionFromManifest();
+      const manifestSha = await getShaFromManifest();
       if (currentVersion) {
         console.log(`📋 Current version (from .pls/versions.json): ${cyan(currentVersion)}`);
+        if (manifestSha) {
+          // Create synthetic release for change detection
+          lastRelease = {
+            version: currentVersion,
+            tag: `v${currentVersion}`,
+            sha: manifestSha,
+            createdAt: new Date(),
+          };
+          console.log(`📋 Last release SHA: ${cyan(manifestSha.substring(0, 7))}`);
+        }
       }
     }
 
@@ -81,10 +98,12 @@ export async function handlePR(args: string[]): Promise<void> {
       token: parsed.token,
     });
 
-    const lastRelease = await storage.getLastRelease();
-    if (lastRelease) {
-      if (!currentVersion) {
-        currentVersion = lastRelease.version;
+    if (!lastRelease) {
+      lastRelease = await storage.getLastRelease();
+      if (lastRelease) {
+        if (!currentVersion) {
+          currentVersion = lastRelease.version;
+        }
         console.log(`📌 Current version (from GitHub): ${cyan(lastRelease.tag)}`);
       }
     }
