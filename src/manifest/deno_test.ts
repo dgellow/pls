@@ -21,7 +21,10 @@ Deno.test('DenoManifest - getVersion reads version from deno.json', async () => 
 Deno.test('DenoManifest - getVersion returns null when no version', async () => {
   const tempDir = await Deno.makeTempDir();
   try {
-    await Deno.writeTextFile(`${tempDir}/deno.json`, JSON.stringify({ name: '@test/pkg' }, null, 2));
+    await Deno.writeTextFile(
+      `${tempDir}/deno.json`,
+      JSON.stringify({ name: '@test/pkg' }, null, 2),
+    );
 
     const manifest = new DenoManifest(tempDir);
     const version = await manifest.getVersion();
@@ -56,7 +59,10 @@ Deno.test('DenoManifest - setVersion updates existing version', async () => {
 Deno.test('DenoManifest - setVersion adds version when missing', async () => {
   const tempDir = await Deno.makeTempDir();
   try {
-    await Deno.writeTextFile(`${tempDir}/deno.json`, JSON.stringify({ name: '@test/pkg' }, null, 2));
+    await Deno.writeTextFile(
+      `${tempDir}/deno.json`,
+      JSON.stringify({ name: '@test/pkg' }, null, 2),
+    );
 
     const manifest = new DenoManifest(tempDir);
     await manifest.setVersion('1.0.0');
@@ -87,9 +93,13 @@ Deno.test('DenoManifest - getWorkspaceMembers returns workspace array', async ()
   try {
     await Deno.writeTextFile(
       `${tempDir}/deno.json`,
-      JSON.stringify({
-        workspace: ['./packages/a', './packages/b'],
-      }, null, 2),
+      JSON.stringify(
+        {
+          workspace: ['./packages/a', './packages/b'],
+        },
+        null,
+        2,
+      ),
     );
 
     const manifest = new DenoManifest(tempDir);

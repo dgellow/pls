@@ -1,6 +1,6 @@
 export type { Manifest, ManifestInfo, WorkspaceOptions } from './interface.ts';
-export { DenoManifest, createDenoManifest } from './deno.ts';
-export { NodeManifest, createNodeManifest } from './node.ts';
+export { createDenoManifest, DenoManifest } from './deno.ts';
+export { createNodeManifest, NodeManifest } from './node.ts';
 export {
   createManifest,
   detectManifests,

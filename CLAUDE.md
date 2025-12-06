@@ -2,7 +2,8 @@
 
 ## Project Overview
 
-PLS is a release automation tool built with Deno. It uses pluggable storage backends (local JSON or GitHub releases).
+PLS is a release automation tool built with Deno. It uses pluggable storage backends (local JSON or
+GitHub releases).
 
 ## Core Philosophy
 

@@ -1,7 +1,7 @@
 import { parseArgs } from '@std/cli/parse-args';
 import { bold, cyan, green, red, yellow } from '@std/fmt/colors';
 import { createStorage } from './storage/mod.ts';
-import { Detector, ReleasePullRequest, ReleaseManager, Version } from './core/mod.ts';
+import { Detector, ReleaseManager, ReleasePullRequest, Version } from './core/mod.ts';
 import { PlsError } from './types.ts';
 
 export function printPRHelp(): void {
