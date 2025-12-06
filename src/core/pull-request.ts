@@ -112,7 +112,6 @@ export class ReleasePullRequest {
     const existing = await this.findExisting();
 
     let selectedVersion = bump.to;
-    let existingOptions: VersionOption[] | undefined;
     let existingBody: string | undefined;
 
     // If PR exists, check if user has selected a different version
@@ -121,9 +120,8 @@ export class ReleasePullRequest {
       existingBody = existingPR.body || '';
       const parsed = parseOptionsBlock(existingBody);
       if (parsed?.selected) {
-        // User has a selection - preserve it along with the existing options
+        // User has a selection - preserve the selected version
         selectedVersion = parsed.selected.version;
-        existingOptions = parsed.options;
         if (selectedVersion !== bump.to) {
           console.log(`Preserving user's version selection: ${selectedVersion}`);
         }
@@ -139,12 +137,13 @@ export class ReleasePullRequest {
       to: selectedVersion,
     };
 
-    // Generate body - use existing options if preserving selection
+    // Always regenerate options based on the selected version
+    // This ensures options are correct when user switches to/from prerelease
     const body = this.generatePRBody(
       effectiveBump,
       changelog,
-      bump.from,
-      existingOptions,
+      selectedVersion, // Use selected version as base for options
+      undefined, // Always regenerate options
       debugEntry,
       existingBody,
     );
