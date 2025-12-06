@@ -146,3 +146,68 @@ Deno.test('GitHubStorage - saveRelease', async () => {
     globalThis.fetch = originalFetch;
   }
 });
+
+Deno.test('GitHubStorage - saveRelease marks prerelease versions', async () => {
+  let capturedBody: string | undefined;
+
+  const mockFetchCapture = (
+    _url: string | URL | Request,
+    init?: RequestInit,
+  ): Promise<Response> => {
+    capturedBody = init?.body as string;
+    return Promise.resolve(
+      new Response(JSON.stringify({ id: 1 }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+  };
+
+  globalThis.fetch = mockFetchCapture as typeof fetch;
+
+  try {
+    const storage = new GitHubStorage({ owner: 'test-owner', repo: 'test-repo' });
+
+    // Test alpha version
+    await storage.saveRelease({
+      version: '1.0.0-alpha.0',
+      tag: 'v1.0.0-alpha.0',
+      sha: 'abc123',
+      createdAt: new Date(),
+    });
+    let parsed = JSON.parse(capturedBody!);
+    assertEquals(parsed.prerelease, true);
+
+    // Test beta version
+    await storage.saveRelease({
+      version: '1.0.0-beta.1',
+      tag: 'v1.0.0-beta.1',
+      sha: 'abc123',
+      createdAt: new Date(),
+    });
+    parsed = JSON.parse(capturedBody!);
+    assertEquals(parsed.prerelease, true);
+
+    // Test rc version
+    await storage.saveRelease({
+      version: '1.0.0-rc.0',
+      tag: 'v1.0.0-rc.0',
+      sha: 'abc123',
+      createdAt: new Date(),
+    });
+    parsed = JSON.parse(capturedBody!);
+    assertEquals(parsed.prerelease, true);
+
+    // Test stable version
+    await storage.saveRelease({
+      version: '1.0.0',
+      tag: 'v1.0.0',
+      sha: 'abc123',
+      createdAt: new Date(),
+    });
+    parsed = JSON.parse(capturedBody!);
+    assertEquals(parsed.prerelease, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
