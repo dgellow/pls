@@ -4,10 +4,11 @@ import { PlsError } from '../types.ts';
 export class Detector {
   async getCommitsSince(since: string | null): Promise<Commit[]> {
     try {
-      // Build git log command
+      // Use %x00 (null byte) as delimiter since it can't appear in commit messages
+      const DELIM = '\x00';
       const args = [
         'log',
-        '--format=%H|%s|%an|%aI',
+        `--format=%H${DELIM}%s${DELIM}%an${DELIM}%aI`,
         '--no-merges',
       ];
 
@@ -33,7 +34,7 @@ export class Detector {
       const lines = output.trim().split('\n').filter((line) => line);
 
       return lines.map((line) => {
-        const [sha, message, author, date] = line.split('|');
+        const [sha, message, author, date] = line.split(DELIM);
         return {
           sha,
           message,
