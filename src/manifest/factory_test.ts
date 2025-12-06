@@ -61,10 +61,14 @@ Deno.test('detectWorkspace - detects deno workspace', async () => {
     // Create root deno.json with workspace
     await Deno.writeTextFile(
       `${tempDir}/deno.json`,
-      JSON.stringify({
-        version: '1.0.0',
-        workspace: ['./packages/a'],
-      }, null, 2),
+      JSON.stringify(
+        {
+          version: '1.0.0',
+          workspace: ['./packages/a'],
+        },
+        null,
+        2,
+      ),
     );
 
     // Create workspace member
@@ -90,10 +94,14 @@ Deno.test('updateAllVersions - updates root and workspace members', async () => 
     // Create root deno.json with workspace
     await Deno.writeTextFile(
       `${tempDir}/deno.json`,
-      JSON.stringify({
-        version: '1.0.0',
-        workspace: ['./packages/a'],
-      }, null, 2),
+      JSON.stringify(
+        {
+          version: '1.0.0',
+          workspace: ['./packages/a'],
+        },
+        null,
+        2,
+      ),
     );
 
     // Create workspace member
