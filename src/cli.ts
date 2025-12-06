@@ -3,7 +3,14 @@
 import { parseArgs } from '@std/cli/parse-args';
 import { bold, cyan, green, red, yellow } from '@std/fmt/colors';
 import { createStorage } from './storage/mod.ts';
-import { Detector, ReleaseManager, Version } from './core/mod.ts';
+import {
+  Detector,
+  extractVersionFromCommit,
+  parseReleaseMetadata,
+  ReleaseManager,
+  type ReleaseMetadata,
+  Version,
+} from './core/mod.ts';
 import { PlsError } from './types.ts';
 import type { VersionBump } from './types.ts';
 import { handleTransition } from './cli-transition.ts';
@@ -13,10 +20,15 @@ import denoJson from '../deno.json' with { type: 'json' };
 const VERSION = denoJson.version;
 
 /**
- * Check if the current HEAD commit is a release commit.
- * Returns the version from the commit message if it is, null otherwise.
+ * Get release metadata from the current HEAD commit.
+ * Returns structured metadata if available, or extracts version from title as fallback.
  */
-async function getReleaseCommitVersion(): Promise<string | null> {
+async function getReleaseCommitInfo(): Promise<
+  {
+    version: string;
+    metadata: ReleaseMetadata | null;
+  } | null
+> {
   try {
     const command = new Deno.Command('git', {
       args: ['log', '-1', '--pretty=%B'],
@@ -28,10 +40,17 @@ async function getReleaseCommitVersion(): Promise<string | null> {
     }
 
     const message = new TextDecoder().decode(stdout).trim();
-    // Match "chore: release v1.2.3" or "chore: release v1.2.3-beta.1"
-    const match = message.match(/^chore: release v(\d+\.\d+\.\d+(?:-[\w.]+)?)/);
-    if (match) {
-      return match[1];
+
+    // First try to get structured metadata
+    const metadata = parseReleaseMetadata(message);
+    if (metadata) {
+      return { version: metadata.version, metadata };
+    }
+
+    // Fall back to extracting version from commit title (backwards compatibility)
+    const version = extractVersionFromCommit(message);
+    if (version) {
+      return { version, metadata: null };
     }
 
     return null;
@@ -212,11 +231,21 @@ async function main(): Promise<void> {
     // Check if the current commit is already a release commit
     // This happens when a release PR is merged - we should just create the tag/release
     // without recalculating the version (which could cause a double bump)
-    const releaseCommitVersion = await getReleaseCommitVersion();
+    const releaseCommitInfo = await getReleaseCommitInfo();
     const currentSha = await detector.getCurrentSha();
 
-    if (releaseCommitVersion) {
-      console.log(`📌 Current commit is a release commit for v${cyan(releaseCommitVersion)}`);
+    if (releaseCommitInfo) {
+      const { version: releaseCommitVersion, metadata } = releaseCommitInfo;
+
+      if (metadata) {
+        console.log(`📌 Current commit is a release commit (structured metadata)`);
+        console.log(
+          `   Version: ${cyan(metadata.version)} (from ${metadata.from}, ${metadata.type})`,
+        );
+      } else {
+        console.log(`📌 Current commit is a release commit for v${cyan(releaseCommitVersion)}`);
+        console.log(yellow(`   (no structured metadata found, using title fallback)`));
+      }
 
       // Check if release already exists for this version
       const lastRelease = await storage.getLastRelease();
@@ -233,14 +262,6 @@ async function main(): Promise<void> {
       if (isDryRun) {
         console.log(yellow('\n🔍 DRY RUN MODE (use --execute to create release)\n'));
       }
-
-      // Create a synthetic bump object for the release
-      const bump: VersionBump = {
-        from: lastRelease?.version || '0.0.0',
-        to: releaseCommitVersion,
-        type: 'patch', // Type doesn't matter here, just for display
-        commits: [],
-      };
 
       console.log(`\n📊 Creating release: ${green(`v${releaseCommitVersion}`)}`);
 

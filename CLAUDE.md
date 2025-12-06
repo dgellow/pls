@@ -7,6 +7,10 @@ GitHub releases).
 
 ## Core Philosophy
 
+- **Reliability Over Convenience**: We refuse fragile quick solutions. We aim for reliable solutions
+  that are designed and engineered to handle edge cases gracefully. No regex parsing of
+  human-readable text when structured data is possible. No assumptions about external state. No race
+  conditions.
 - **Minimal MVP**: Start with only detect → version → release
 - **Storage First**: Everything flows through a clean storage interface
 - **Fast by Default**: Prefer local operations, minimize network calls
@@ -78,6 +82,16 @@ Two initial implementations:
 - Provide actionable error messages
 - Graceful degradation (especially for GitHub backend)
 - Use structured errors with error codes
+
+### Data Formats
+
+- **Always prefer structured data over parsing text**: When data needs to be communicated between
+  components or persisted, use structured formats (JSON, TOML, or clear delimited sections) rather
+  than relying on regex parsing of human-readable strings.
+- **Design for backwards compatibility**: When adding structure to previously unstructured data,
+  always include fallback parsing for the old format.
+- **Use clear delimiters**: When embedding structured data in text (like commit messages), use
+  unambiguous delimiters that won't conflict with normal content (e.g., `---pls-release---`).
 
 ### Performance
 
