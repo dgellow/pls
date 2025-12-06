@@ -52,11 +52,11 @@ export class ReleaseManager {
 
       // Write back
       await Deno.writeTextFile(changelogPath, newContent);
-      console.log(`📝 Updated CHANGELOG.md`);
+      console.log(`Updated CHANGELOG.md`);
     } catch (error) {
       // Don't fail the release if changelog update fails
       console.warn(
-        `⚠️  Failed to update CHANGELOG.md: ${
+        `Warning: Failed to update CHANGELOG.md: ${
           error instanceof Error ? error.message : String(error)
         }`,
       );
@@ -162,24 +162,24 @@ export class ReleaseManager {
       }
 
       if (wouldUpdate.length > 0) {
-        console.log(`📦 Would update version in: ${wouldUpdate.join(', ')}`);
+        console.log(`Would update version in: ${wouldUpdate.join(', ')}`);
       }
-      console.log(`📋 Would update .pls/versions.json`);
+      console.log(`Would update .pls/versions.json`);
       return;
     }
 
     const result = await updateAllVersions(version);
 
     if (result.updated.length > 0) {
-      console.log(`📦 Updated version in: ${result.updated.join(', ')}`);
+      console.log(`Updated version in: ${result.updated.join(', ')}`);
     }
 
     for (const error of result.errors) {
-      console.warn(`⚠️  Failed to update ${error.path}: ${error.error}`);
+      console.warn(`Warning: Failed to update ${error.path}: ${error.error}`);
     }
 
     // Note: .pls/versions.json is updated after commit with SHA in createRelease
-    console.log(`📦 Updated manifest versions`);
+    console.log(`Updated manifest versions`);
   }
 
   /**
@@ -205,10 +205,10 @@ export class ReleaseManager {
     };
 
     if (dryRun) {
-      console.log('🏷️  Dry run - would create release:');
-      console.log(`   Version: ${release.version}`);
-      console.log(`   Tag: ${release.tag}`);
-      console.log(`   SHA: ${release.sha}`);
+      console.log('Dry run - would create release:');
+      console.log(`  Version: ${release.version}`);
+      console.log(`  Tag: ${release.tag}`);
+      console.log(`  SHA: ${release.sha}`);
       return release;
     }
 
@@ -272,17 +272,17 @@ export class ReleaseManager {
     };
 
     if (dryRun) {
-      console.log('🏷️  Dry run - would create release:');
-      console.log(`   Version: ${release.version}`);
-      console.log(`   Tag: ${release.tag}`);
-      console.log(`   SHA: ${release.sha}`);
+      console.log('Dry run - would create release:');
+      console.log(`  Version: ${release.version}`);
+      console.log(`  Tag: ${release.tag}`);
+      console.log(`  SHA: ${release.sha}`);
       console.log('');
 
       // Show what manifests would be updated
       await this.updateManifests(bump.to, true);
 
       console.log('');
-      console.log('📝 Release Notes:');
+      console.log('Release Notes:');
       console.log(notes);
       return release;
     }
@@ -313,7 +313,7 @@ export class ReleaseManager {
 
       // Update .pls/versions.json with version AND SHA, then amend commit
       await setVersionsManifest(bump.to, '.', Deno.cwd(), release.sha);
-      console.log(`📋 Updated .pls/versions.json`);
+      console.log(`Updated .pls/versions.json`);
 
       await new Deno.Command('git', { args: ['add', '.pls/versions.json'] }).output();
       await new Deno.Command('git', {

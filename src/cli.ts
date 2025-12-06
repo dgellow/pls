@@ -61,7 +61,7 @@ async function getReleaseCommitInfo(): Promise<
 async function cloneToTemp(repoUrl: string): Promise<string> {
   const tempDir = await Deno.makeTempDir({ prefix: 'pls-' });
 
-  console.log(`📥 Cloning ${cyan(repoUrl)}...`);
+  console.log(`Cloning ${cyan(repoUrl)}...`);
 
   const command = new Deno.Command('git', {
     args: ['clone', '--depth', '1', repoUrl, tempDir],
@@ -214,7 +214,7 @@ async function main(): Promise<void> {
           owner: repoInfo.owner || detected.owner,
           repo: repoInfo.repo || detected.repo,
         };
-        console.log(`📦 Detected repository: ${cyan(`${repoInfo.owner}/${repoInfo.repo}`)}`);
+        console.log(`Detected repository: ${cyan(`${repoInfo.owner}/${repoInfo.repo}`)}`);
       }
     }
 
@@ -225,7 +225,7 @@ async function main(): Promise<void> {
       token: args.token,
     });
 
-    console.log(`💾 Using storage: ${cyan(args.storage)}`);
+    console.log(`Storage: ${cyan(args.storage)}`);
 
     // Check if the current commit is already a release commit
     // This happens when a release PR is merged - we should just create the tag/release
@@ -237,19 +237,19 @@ async function main(): Promise<void> {
       const { version: releaseCommitVersion, metadata } = releaseCommitInfo;
 
       if (metadata) {
-        console.log(`📌 Current commit is a release commit (structured metadata)`);
+        console.log(`Current commit is a release commit (structured metadata)`);
         console.log(
-          `   Version: ${cyan(metadata.version)} (from ${metadata.from}, ${metadata.type})`,
+          `  Version: ${cyan(metadata.version)} (from ${metadata.from}, ${metadata.type})`,
         );
       } else {
-        console.log(`📌 Current commit is a release commit for v${cyan(releaseCommitVersion)}`);
-        console.log(yellow(`   (no structured metadata found, using title fallback)`));
+        console.log(`Current commit is a release commit for v${cyan(releaseCommitVersion)}`);
+        console.log(yellow(`  (no structured metadata found, using title fallback)`));
       }
 
       // Check if release already exists for this version
       const lastRelease = await storage.getLastRelease();
       if (lastRelease?.version === releaseCommitVersion) {
-        console.log(yellow(`ℹ️  Release v${releaseCommitVersion} already exists`));
+        console.log(yellow(`Release v${releaseCommitVersion} already exists`));
         return;
       }
 
@@ -259,10 +259,10 @@ async function main(): Promise<void> {
       const isDryRun = !args.execute;
 
       if (isDryRun) {
-        console.log(yellow('\n🔍 DRY RUN MODE (use --execute to create release)\n'));
+        console.log(yellow('\nDRY RUN (use --execute to create release)\n'));
       }
 
-      console.log(`\n📊 Creating release: ${green(`v${releaseCommitVersion}`)}`);
+      console.log(`\nCreating release: ${green(`v${releaseCommitVersion}`)}`);
 
       const tagStrategy = args['tag-strategy'] as 'github' | 'git';
       const release = await releaseManager.createReleaseFromCommit(
@@ -273,9 +273,9 @@ async function main(): Promise<void> {
       );
 
       if (!isDryRun) {
-        console.log(`\n✅ Release ${green(release.tag)} created successfully!`);
+        console.log(`\nRelease ${green(release.tag)} created successfully!`);
         if (release.url) {
-          console.log(`🔗 ${release.url}`);
+          console.log(release.url);
         }
       }
       return;
@@ -285,21 +285,21 @@ async function main(): Promise<void> {
     // Get last release
     const lastRelease = await storage.getLastRelease();
     if (lastRelease) {
-      console.log(`📌 Last release: ${cyan(lastRelease.tag)} (${lastRelease.sha.substring(0, 7)})`);
+      console.log(`Last release: ${cyan(lastRelease.tag)} (${lastRelease.sha.substring(0, 7)})`);
     } else {
-      console.log(`📌 No previous releases found`);
+      console.log(`No previous releases found`);
     }
 
     // Detect changes
-    console.log(`\n🔍 Detecting changes...`);
+    console.log(`\nDetecting changes...`);
     const changes = await detector.detectChanges(lastRelease);
 
     if (!changes.hasChanges) {
-      console.log(yellow('ℹ️  No changes detected since last release'));
+      console.log(yellow('No changes detected since last release'));
       return;
     }
 
-    console.log(`📝 Found ${green(String(changes.commits.length))} commits`);
+    console.log(`Found ${green(String(changes.commits.length))} commits`);
 
     // Determine version bump
     const version = new Version();
@@ -309,18 +309,18 @@ async function main(): Promise<void> {
     );
 
     if (!bump) {
-      console.log(yellow('ℹ️  No version bump needed'));
+      console.log(yellow('No version bump needed'));
       return;
     }
 
-    console.log(`\n📊 Version bump: ${cyan(bump.from)} → ${green(bump.to)} (${bump.type})`);
+    console.log(`\nVersion bump: ${cyan(bump.from)} -> ${green(bump.to)} (${bump.type})`);
 
     // Create release
     const releaseManager = new ReleaseManager(storage);
     const isDryRun = !args.execute;
 
     if (isDryRun) {
-      console.log(yellow('\n🔍 DRY RUN MODE (use --execute to create release)\n'));
+      console.log(yellow('\nDRY RUN (use --execute to create release)\n'));
     }
 
     const tagStrategy = args['tag-strategy'] as 'github' | 'git';
@@ -332,9 +332,9 @@ async function main(): Promise<void> {
     );
 
     if (!isDryRun) {
-      console.log(`\n✅ Release ${green(release.tag)} created successfully!`);
+      console.log(`\nRelease ${green(release.tag)} created successfully!`);
       if (release.url) {
-        console.log(`🔗 ${release.url}`);
+        console.log(release.url);
       }
     }
 
@@ -348,12 +348,12 @@ async function main(): Promise<void> {
     }
   } catch (error) {
     if (error instanceof PlsError) {
-      console.error(`\n${red('❌ Error:')} ${error.message}`);
+      console.error(`\n${red('Error:')} ${error.message}`);
       if (error.details) {
         console.error(`${red('Details:')}`, error.details);
       }
     } else {
-      console.error(`\n${red('❌ Unexpected error:')}`, error);
+      console.error(`\n${red('Unexpected error:')}`, error);
     }
 
     // Cleanup temp directory on error

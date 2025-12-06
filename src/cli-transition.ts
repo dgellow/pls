@@ -59,7 +59,7 @@ export async function handleTransition(args: string[]): Promise<void> {
 
   const target = parsed._[0]?.toString().toLowerCase();
   if (!['alpha', 'beta', 'rc', 'stable'].includes(target)) {
-    console.error(`${red('❌ Error:')} Invalid transition target: ${target}`);
+    console.error(`${red('Error:')} Invalid transition target: ${target}`);
     console.error(`Valid targets: alpha, beta, rc, stable`);
     Deno.exit(1);
   }
@@ -86,7 +86,7 @@ export async function handleTransition(args: string[]): Promise<void> {
           owner: repoInfo.owner || detected.owner,
           repo: repoInfo.repo || detected.repo,
         };
-        console.log(`📦 Detected repository: ${cyan(`${repoInfo.owner}/${repoInfo.repo}`)}`);
+        console.log(`Detected repository: ${cyan(`${repoInfo.owner}/${repoInfo.repo}`)}`);
       }
     }
 
@@ -96,19 +96,19 @@ export async function handleTransition(args: string[]): Promise<void> {
       token: parsed.token,
     });
 
-    console.log(`💾 Using storage: ${cyan(parsed.storage)}`);
+    console.log(`Storage: ${cyan(parsed.storage)}`);
 
     // Get last release
     const lastRelease = await storage.getLastRelease();
     if (!lastRelease) {
       console.error(
-        `${red('❌ Error:')} No previous releases found. Create an initial release first.`,
+        `${red('Error:')} No previous releases found. Create an initial release first.`,
       );
       Deno.exit(1);
     }
 
     const currentVersion = lastRelease.version;
-    console.log(`📌 Current version: ${cyan(currentVersion)}`);
+    console.log(`Current version: ${cyan(currentVersion)}`);
 
     // Perform transition
     const transition = new VersionTransition();
@@ -118,7 +118,7 @@ export async function handleTransition(args: string[]): Promise<void> {
       bumpType,
     );
 
-    console.log(`📊 Transition: ${cyan(currentVersion)} → ${green(newVersion)}`);
+    console.log(`Transition: ${cyan(currentVersion)} -> ${green(newVersion)}`);
 
     // Get current SHA
     const currentSha = await detector.getCurrentSha();
@@ -128,7 +128,7 @@ export async function handleTransition(args: string[]): Promise<void> {
     const isDryRun = !parsed.execute;
 
     if (isDryRun) {
-      console.log(yellow('\n🔍 DRY RUN MODE (use --execute to create release)\n'));
+      console.log(yellow('\nDRY RUN (use --execute to create release)\n'));
     }
 
     // Create minimal version bump for release
@@ -146,19 +146,19 @@ export async function handleTransition(args: string[]): Promise<void> {
     );
 
     if (!isDryRun) {
-      console.log(`\n✅ Transition to ${green(release.tag)} created successfully!`);
+      console.log(`\nTransition to ${green(release.tag)} created successfully!`);
       if (release.url) {
-        console.log(`🔗 ${release.url}`);
+        console.log(release.url);
       }
     }
   } catch (error) {
     if (error instanceof PlsError) {
-      console.error(`\n${red('❌ Error:')} ${error.message}`);
+      console.error(`\n${red('Error:')} ${error.message}`);
       if (error.details) {
         console.error(`${red('Details:')}`, error.details);
       }
     } else {
-      console.error(`\n${red('❌ Unexpected error:')}`, error);
+      console.error(`\n${red('Unexpected error:')}`, error);
     }
     Deno.exit(1);
   }

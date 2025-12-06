@@ -16,12 +16,46 @@ pls --storage=local --execute
 
 # Use GitHub storage
 pls --storage=github --execute
-
-# Transition to alpha/beta/rc/stable
-pls transition alpha --execute
-pls transition beta --execute
-pls transition stable --execute
 ```
+
+## Version Transitions
+
+Move through pre-release stages without analyzing commits:
+
+```bash
+# Start an alpha cycle (bumps minor by default)
+pls transition alpha --execute
+
+# Progress through stages
+pls transition beta --execute      # 1.2.0-alpha.5 -> 1.2.0-beta.0
+pls transition rc --execute        # 1.2.0-beta.2 -> 1.2.0-rc.0
+pls transition stable --execute    # 1.2.0-rc.1 -> 1.2.0
+
+# Control the version bump when starting a new cycle
+pls transition alpha --major --execute    # 1.2.3 -> 2.0.0-alpha.0
+pls transition alpha --minor --execute    # 1.2.3 -> 1.3.0-alpha.0 (default)
+pls transition alpha --patch --execute    # 1.2.3 -> 1.2.4-alpha.0
+```
+
+### Transition Flow
+
+```
+stable (1.2.3)
+    |
+    v  [transition alpha --minor]
+alpha (1.3.0-alpha.0) --> alpha.1 --> alpha.2 ...
+    |
+    v  [transition beta]
+beta (1.3.0-beta.0) --> beta.1 --> beta.2 ...
+    |
+    v  [transition rc]
+rc (1.3.0-rc.0) --> rc.1 ...
+    |
+    v  [transition stable]
+stable (1.3.0)
+```
+
+Within any pre-release stage, regular `pls --execute` increments the build number (e.g., alpha.0 -> alpha.1).
 
 ## Storage Backends
 

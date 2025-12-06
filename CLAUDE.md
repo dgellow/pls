@@ -204,20 +204,20 @@ Test patterns:
 ```
 pls
 
-💾 Using storage: github
-📌 Last release: v1.2.2 (abc1234)
+Storage: github
+Last release: v1.2.2 (abc1234)
 
-🔍 Detecting changes...
-📝 Found 5 commits
+Detecting changes...
+Found 5 commits
 
-📊 Version bump: 1.2.2 → 1.2.3 (patch)
+Version bump: 1.2.2 -> 1.2.3 (patch)
 
-🔍 DRY RUN MODE (use --execute to create release)
+DRY RUN (use --execute to create release)
 
-🏷️  Dry run - would create release:
-   Version: 1.2.3
-   Tag: v1.2.3
-   SHA: def5678
+Dry run - would create release:
+  Version: 1.2.3
+  Tag: v1.2.3
+  SHA: def5678
 ```
 
 ### No Changes
@@ -225,11 +225,11 @@ pls
 ```
 pls
 
-💾 Using storage: local
-📌 Last release: v1.2.3 (abc1234)
+Storage: local
+Last release: v1.2.3 (abc1234)
 
-🔍 Detecting changes...
-ℹ️  No changes detected since last release
+Detecting changes...
+No changes detected since last release
 ```
 
 ### Error State
@@ -237,17 +237,17 @@ pls
 ```
 pls --storage=github
 
-💾 Using storage: github
+Storage: github
 
-❌ Error: GitHub token required for github storage
-   Set GITHUB_TOKEN environment variable or use --token flag
+Error: GitHub token required for github storage
+  Set GITHUB_TOKEN environment variable or use --token flag
 
-   Example:
-     export GITHUB_TOKEN=ghp_xxxx
-     pls --storage=github
+  Example:
+    export GITHUB_TOKEN=ghp_xxxx
+    pls --storage=github
 
-   Or use local storage:
-     pls --storage=local
+  Or use local storage:
+    pls --storage=local
 ```
 
 ## Development Commands
