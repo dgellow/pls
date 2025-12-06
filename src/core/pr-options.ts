@@ -3,9 +3,15 @@
  *
  * Format:
  * <!-- pls:options -->
- * - [x] **1.3.0** (minor) <!-- pls:v:1.3.0:minor -->
+ * **Current: 1.3.0** (minor) <!-- pls:v:1.3.0:minor:current -->
+ *
+ * Switch to:
  * - [ ] 1.3.0-alpha.0 (alpha) <!-- pls:v:1.3.0-alpha.0:transition -->
+ * - [ ] 1.3.0-beta.0 (beta) <!-- pls:v:1.3.0-beta.0:transition -->
  * <!-- pls:options:end -->
+ *
+ * The current selection has no checkbox (just display).
+ * Only alternatives have checkboxes to avoid double-click issues.
  */
 
 import type { VersionBump } from '../types.ts';
@@ -127,38 +133,56 @@ export function generateOptions(
 
 /**
  * Generate the options block for PR description.
+ * Current selection shown without checkbox, alternatives have checkboxes.
  */
 export function generateOptionsBlock(options: VersionOption[]): string {
   const lines: string[] = [OPTIONS_START];
 
-  for (const opt of options) {
-    const checkbox = opt.selected ? '[x]' : '[ ]';
-    let line: string;
+  // Find the selected option
+  const selected = options.find((opt) => opt.selected && !opt.disabled);
+  const alternatives = options.filter((opt) => !opt.selected || opt.disabled);
 
-    if (opt.disabled) {
-      // Disabled options are struck through
-      line =
-        `- [ ] ~~${opt.version}~~ (${opt.label}) <!-- pls:v:${opt.version}:${opt.type}:disabled:${
-          opt.disabledReason || 'unavailable'
-        } -->`;
-    } else if (opt.selected) {
-      // Selected option is bold
-      line =
-        `- ${checkbox} **${opt.version}** (${opt.label}) <!-- pls:v:${opt.version}:${opt.type} -->`;
-    } else {
-      line =
-        `- ${checkbox} ${opt.version} (${opt.label}) <!-- pls:v:${opt.version}:${opt.type} -->`;
+  // Show current selection without checkbox
+  if (selected) {
+    lines.push(
+      `**Current: ${selected.version}** (${selected.label}) <!-- pls:v:${selected.version}:${selected.type}:current -->`,
+    );
+  }
+
+  // Show alternatives with checkboxes (if any)
+  if (alternatives.length > 0) {
+    lines.push('');
+    lines.push('Switch to:');
+
+    for (const opt of alternatives) {
+      let line: string;
+
+      if (opt.disabled) {
+        // Disabled options are struck through
+        line =
+          `- [ ] ~~${opt.version}~~ (${opt.label}) <!-- pls:v:${opt.version}:${opt.type}:disabled:${
+            opt.disabledReason || 'unavailable'
+          } -->`;
+      } else {
+        line = `- [ ] ${opt.version} (${opt.label}) <!-- pls:v:${opt.version}:${opt.type} -->`;
+      }
+
+      lines.push(line);
     }
-
-    lines.push(line);
   }
 
   lines.push(OPTIONS_END);
   return lines.join('\n');
 }
 
+// Regex to match current marker: <!-- pls:v:VERSION:TYPE:current -->
+const CURRENT_MARKER_REGEX = /<!-- pls:v:([^:]+):([^:]+):current -->/;
+
 /**
  * Parse the options block from PR description.
+ * Handles both:
+ * - Current selection (no checkbox, marked with :current)
+ * - Alternatives (checkboxes, checked = user wants to switch)
  */
 export function parseOptionsBlock(body: string): ParsedOptions | null {
   const startIndex = body.indexOf(OPTIONS_START);
@@ -169,17 +193,41 @@ export function parseOptionsBlock(body: string): ParsedOptions | null {
   }
 
   const optionsSection = body.substring(startIndex + OPTIONS_START.length, endIndex);
-  const lines = optionsSection.split('\n').filter((line) => line.trim().startsWith('- ['));
+  const lines = optionsSection.split('\n');
 
   const options: VersionOption[] = [];
-  let selected: VersionOption | null = null;
+  let currentOption: VersionOption | null = null;
+  let firstCheckedAlternative: VersionOption | null = null;
 
   for (const line of lines) {
+    // Check for current selection marker (no checkbox)
+    const currentMatch = line.match(CURRENT_MARKER_REGEX);
+    if (currentMatch) {
+      const [, version, type] = currentMatch;
+      const labelMatch = line.match(/\(([^)]+)\)\s*<!--/);
+      const label = labelMatch ? labelMatch[1] : type;
+
+      const option: VersionOption = {
+        version,
+        type: type as VersionOption['type'],
+        label,
+        selected: true,
+        disabled: false,
+      };
+
+      options.push(option);
+      currentOption = option;
+      continue;
+    }
+
+    // Check for checkbox options (alternatives)
+    if (!line.trim().startsWith('- [')) continue;
+
     const markerMatch = line.match(OPTION_MARKER_REGEX);
     if (!markerMatch) continue;
 
     const [, version, type, disabledReason] = markerMatch;
-    const isSelected = line.includes('[x]');
+    const isChecked = line.includes('[x]');
     const isDisabled = !!disabledReason;
 
     // Extract label from the line (text in parentheses before the marker)
@@ -190,18 +238,21 @@ export function parseOptionsBlock(body: string): ParsedOptions | null {
       version,
       type: type as VersionOption['type'],
       label,
-      selected: isSelected,
+      selected: isChecked, // Checked alternative = user wants to switch
       disabled: isDisabled,
       disabledReason: disabledReason,
     };
 
     options.push(option);
 
-    // Pick the first selected non-disabled option
-    if (isSelected && !isDisabled && !selected) {
-      selected = option;
+    // Track first checked alternative (user wants to switch to this)
+    if (isChecked && !isDisabled && !firstCheckedAlternative) {
+      firstCheckedAlternative = option;
     }
   }
+
+  // If user checked an alternative, that's the selection; otherwise keep current
+  const selected = firstCheckedAlternative || currentOption;
 
   return { options, selected };
 }

@@ -73,19 +73,22 @@ Deno.test('generateOptionsBlock - creates valid markdown', () => {
   assertEquals(block.includes('<!-- pls:options -->'), true);
   assertEquals(block.includes('<!-- pls:options:end -->'), true);
 
-  // Should have checkboxes
-  assertEquals(block.includes('[x]'), true);
-  assertEquals(block.includes('[ ]'), true);
+  // Current selection should NOT have checkbox, marked with :current
+  assertEquals(block.includes('**Current: 1.3.0**'), true);
+  assertEquals(block.includes('<!-- pls:v:1.3.0:minor:current -->'), true);
 
-  // Should have version markers
-  assertEquals(block.includes('<!-- pls:v:1.3.0:minor -->'), true);
+  // Alternatives should have unchecked checkboxes
+  assertEquals(block.includes('[ ]'), true);
+  assertEquals(block.includes('Switch to:'), true);
 });
 
 Deno.test('parseOptionsBlock - extracts selected version', () => {
   const body = `## Release 1.3.0
 
 <!-- pls:options -->
-- [x] **1.3.0** (minor) <!-- pls:v:1.3.0:minor -->
+**Current: 1.3.0** (minor) <!-- pls:v:1.3.0:minor:current -->
+
+Switch to:
 - [ ] 1.3.0-alpha.0 (alpha) <!-- pls:v:1.3.0-alpha.0:transition -->
 - [ ] 1.3.0-beta.0 (beta) <!-- pls:v:1.3.0-beta.0:transition -->
 <!-- pls:options:end -->
@@ -109,8 +112,11 @@ No options block here.`;
 });
 
 Deno.test('getSelectedVersion - extracts version from body', () => {
+  // User checked an alternative, so that becomes selected
   const body = `<!-- pls:options -->
-- [ ] 1.3.0 (minor) <!-- pls:v:1.3.0:minor -->
+**Current: 1.3.0** (minor) <!-- pls:v:1.3.0:minor:current -->
+
+Switch to:
 - [x] 1.3.0-alpha.0 (alpha) <!-- pls:v:1.3.0-alpha.0:transition -->
 <!-- pls:options:end -->`;
 
@@ -122,7 +128,9 @@ Deno.test('updateOptionsBlock - changes selection', () => {
   const body = `## Release
 
 <!-- pls:options -->
-- [x] **1.3.0** (minor) <!-- pls:v:1.3.0:minor -->
+**Current: 1.3.0** (minor) <!-- pls:v:1.3.0:minor:current -->
+
+Switch to:
 - [ ] 1.3.0-alpha.0 (alpha) <!-- pls:v:1.3.0-alpha.0:transition -->
 <!-- pls:options:end -->
 
@@ -130,11 +138,12 @@ Footer`;
 
   const updated = updateOptionsBlock(body, '1.3.0-alpha.0');
 
-  // Old selection should be unchecked
-  assertEquals(updated.includes('- [ ] 1.3.0 (minor)'), true);
+  // New current selection should be displayed without checkbox
+  assertEquals(updated.includes('**Current: 1.3.0-alpha.0**'), true);
+  assertEquals(updated.includes('<!-- pls:v:1.3.0-alpha.0:transition:current -->'), true);
 
-  // New selection should be checked
-  assertEquals(updated.includes('- [x] **1.3.0-alpha.0** (alpha)'), true);
+  // Old selection should now be an alternative
+  assertEquals(updated.includes('- [ ] 1.3.0 (minor)'), true);
 
   // Should preserve surrounding content
   assertEquals(updated.includes('## Release'), true);
@@ -143,13 +152,18 @@ Footer`;
 
 Deno.test('hasSelectionChanged - detects changes', () => {
   const oldBody = `<!-- pls:options -->
-- [x] **1.3.0** (minor) <!-- pls:v:1.3.0:minor -->
+**Current: 1.3.0** (minor) <!-- pls:v:1.3.0:minor:current -->
+
+Switch to:
 - [ ] 1.3.0-alpha.0 (alpha) <!-- pls:v:1.3.0-alpha.0:transition -->
 <!-- pls:options:end -->`;
 
+  // User checked alpha alternative
   const newBody = `<!-- pls:options -->
-- [ ] 1.3.0 (minor) <!-- pls:v:1.3.0:minor -->
-- [x] **1.3.0-alpha.0** (alpha) <!-- pls:v:1.3.0-alpha.0:transition -->
+**Current: 1.3.0** (minor) <!-- pls:v:1.3.0:minor:current -->
+
+Switch to:
+- [x] 1.3.0-alpha.0 (alpha) <!-- pls:v:1.3.0-alpha.0:transition -->
 <!-- pls:options:end -->`;
 
   assertEquals(hasSelectionChanged(oldBody, newBody), true);
@@ -158,7 +172,9 @@ Deno.test('hasSelectionChanged - detects changes', () => {
 
 Deno.test('parseOptionsBlock - handles disabled options', () => {
   const body = `<!-- pls:options -->
-- [x] **1.3.0-beta.0** (beta) <!-- pls:v:1.3.0-beta.0:transition -->
+**Current: 1.3.0-beta.0** (beta) <!-- pls:v:1.3.0-beta.0:transition:current -->
+
+Switch to:
 - [ ] ~~1.3.0-alpha.0~~ (alpha) <!-- pls:v:1.3.0-alpha.0:transition:disabled:already past alpha -->
 <!-- pls:options:end -->`;
 
@@ -171,18 +187,21 @@ Deno.test('parseOptionsBlock - handles disabled options', () => {
   assertEquals(alpha.disabledReason, 'already past alpha');
 });
 
-Deno.test('parseOptionsBlock - picks first when multiple selected', () => {
+Deno.test('parseOptionsBlock - picks first checked alternative', () => {
+  // User checked multiple alternatives - should pick the first one
   const body = `<!-- pls:options -->
-- [x] **1.3.0** (minor) <!-- pls:v:1.3.0:minor -->
-- [x] **1.3.0-alpha.0** (alpha) <!-- pls:v:1.3.0-alpha.0:transition -->
-- [x] **1.3.0-beta.0** (beta) <!-- pls:v:1.3.0-beta.0:transition -->
+**Current: 1.3.0** (minor) <!-- pls:v:1.3.0:minor:current -->
+
+Switch to:
+- [x] 1.3.0-alpha.0 (alpha) <!-- pls:v:1.3.0-alpha.0:transition -->
+- [x] 1.3.0-beta.0 (beta) <!-- pls:v:1.3.0-beta.0:transition -->
 <!-- pls:options:end -->`;
 
   const parsed = parseOptionsBlock(body);
   assertExists(parsed);
 
-  // Should pick the first selected option
-  assertEquals(parsed.selected?.version, '1.3.0');
+  // Should pick the first checked alternative (alpha), not current
+  assertEquals(parsed.selected?.version, '1.3.0-alpha.0');
 });
 
 Deno.test('parseOptionsBlock - returns null for empty body', () => {
