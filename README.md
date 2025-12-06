@@ -40,10 +40,10 @@ pls transition stable --execute
 
 ```bash
 # Run directly
-deno run -A jsr:@stainless/pls
+deno run -A jsr:@dgellow/pls
 
 # Or install globally
-deno install -A -n pls jsr:@stainless/pls/cli
+deno install -A -n pls jsr:@dgellow/pls/cli
 ```
 
 ## Development
