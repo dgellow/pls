@@ -356,18 +356,21 @@ export class ReleasePullRequest {
 
 This PR was automatically created by pls.
 
-### Version Selection
-
-Select a version option below. The branch will be updated when the workflow runs.
-
-${optionsBlock}
-
 ### Changes
 
 ${changelog}
 
 ---
 *Merging this PR will create a GitHub release and tag.*
+
+<details>
+<summary>Version Selection</summary>
+
+Select a version option below. The branch will be updated when the workflow runs.
+
+${optionsBlock}
+
+</details>
 `;
   }
 
