@@ -352,13 +352,16 @@ export class ReleasePullRequest {
     const options = generateOptions(currentVersion, bump);
     const optionsBlock = generateOptionsBlock(options);
 
+    // Strip the version header from changelog (it's redundant with PR title)
+    const changelogContent = changelog.replace(/^## \d+\.\d+\.\d+.*\n\n/, '');
+
     return `## Release ${bump.to}
 
 This PR was automatically created by pls.
 
 ### Changes
 
-${changelog}
+${changelogContent}
 
 ---
 *Merging this PR will create a GitHub release and tag.*
