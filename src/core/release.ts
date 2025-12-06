@@ -146,14 +146,30 @@ export class ReleaseManager {
   }
 
   private async updateManifests(version: string, dryRun: boolean): Promise<void> {
+    if (dryRun) {
+      // In dry-run, just detect what would be updated without modifying
+      const { detectWorkspace } = await import('../manifest/factory.ts');
+      const workspace = await detectWorkspace();
+      const wouldUpdate: string[] = [];
+
+      if (workspace.root) {
+        wouldUpdate.push(workspace.root.path);
+      }
+      for (const member of workspace.members) {
+        wouldUpdate.push(`${member.path}/${member.manifest.path}`);
+      }
+
+      if (wouldUpdate.length > 0) {
+        console.log(`📦 Would update version in: ${wouldUpdate.join(', ')}`);
+      }
+      console.log(`📋 Would update .pls/versions.json`);
+      return;
+    }
+
     const result = await updateAllVersions(version);
 
     if (result.updated.length > 0) {
-      if (dryRun) {
-        console.log(`📦 Would update version in: ${result.updated.join(', ')}`);
-      } else {
-        console.log(`📦 Updated version in: ${result.updated.join(', ')}`);
-      }
+      console.log(`📦 Updated version in: ${result.updated.join(', ')}`);
     }
 
     for (const error of result.errors) {
@@ -161,12 +177,8 @@ export class ReleaseManager {
     }
 
     // Update .pls/versions.json
-    if (dryRun) {
-      console.log(`📋 Would update .pls/versions.json`);
-    } else {
-      await setVersionsManifest(version);
-      console.log(`📋 Updated .pls/versions.json`);
-    }
+    await setVersionsManifest(version);
+    console.log(`📋 Updated .pls/versions.json`);
   }
 
   async createRelease(
