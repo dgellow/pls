@@ -3,5 +3,4 @@ set -e
 
 deno fmt --check
 deno lint
-deno check src/mod.ts src/cli.ts
-deno test -A
+deno check
