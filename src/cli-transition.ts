@@ -72,7 +72,7 @@ export async function handleTransition(args: string[]): Promise<void> {
   // Default is minor, but let transition logic handle it
 
   try {
-    console.log(bold('🚀 PLS - Version Transition\n'));
+    console.log(bold('pls transition\n'));
 
     // Create detector and storage
     const detector = new Detector();

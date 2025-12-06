@@ -53,7 +53,7 @@ function parseRepoUrl(url: string): { owner: string; repo: string } | null {
 
 function printHelp(): void {
   console.log(`
-${bold('pls')} - A minimal, fast release automation tool
+${bold('pls')} - Release automation tool
 
 ${bold('USAGE:')}
   pls [REPO_URL] [OPTIONS]
@@ -143,7 +143,7 @@ async function main(): Promise<void> {
       Deno.chdir(workingDir);
     }
 
-    console.log(bold('🚀 PLS - Release Automation\n'));
+    console.log(bold('pls\n'));
 
     // Create detector to get repo info
     const detector = new Detector();
