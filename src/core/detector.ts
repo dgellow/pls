@@ -78,6 +78,22 @@ export class Detector {
     }
   }
 
+  /**
+   * Check if a SHA exists in the local repository.
+   * Returns true if the SHA is valid and reachable.
+   */
+  async shaExists(sha: string): Promise<boolean> {
+    try {
+      const command = new Deno.Command('git', {
+        args: ['cat-file', '-t', sha],
+      });
+      const { code } = await command.output();
+      return code === 0;
+    } catch {
+      return false;
+    }
+  }
+
   async getRepoInfo(): Promise<{ owner: string; repo: string } | null> {
     try {
       const command = new Deno.Command('git', {

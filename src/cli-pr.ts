@@ -79,14 +79,25 @@ export async function handlePR(args: string[]): Promise<void> {
       if (currentVersion) {
         console.log(`Current version (from .pls/versions.json): ${cyan(currentVersion)}`);
         if (manifestSha) {
-          // Create synthetic release for change detection
-          lastRelease = {
-            version: currentVersion,
-            tag: `v${currentVersion}`,
-            sha: manifestSha,
-            createdAt: new Date(),
-          };
-          console.log(`Last release SHA: ${cyan(manifestSha.substring(0, 7))}`);
+          // Validate SHA exists in repo (may be stale after squash/rebase merge)
+          const shaIsValid = await detector.shaExists(manifestSha);
+          if (shaIsValid) {
+            // Create synthetic release for change detection
+            lastRelease = {
+              version: currentVersion,
+              tag: `v${currentVersion}`,
+              sha: manifestSha,
+              createdAt: new Date(),
+            };
+            console.log(`Last release SHA: ${cyan(manifestSha.substring(0, 7))}`);
+          } else {
+            console.log(
+              yellow(
+                `SHA ${manifestSha.substring(0, 7)} not found in repo (may be stale after merge)`,
+              ),
+            );
+            console.log(`Will fall back to GitHub releases for commit range`);
+          }
         }
       }
     }
