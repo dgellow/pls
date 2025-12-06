@@ -117,7 +117,7 @@ export class Version {
     lastVersion: string | null,
     commits: Commit[],
   ): Promise<VersionBump | null> {
-    const bumpType = this.determineBumpType(commits);
+    let bumpType = this.determineBumpType(commits);
     if (!bumpType) {
       return null;
     }
@@ -131,6 +131,12 @@ export class Version {
     if (!fromVersion) {
       // Default to 0.0.0 if no version found
       fromVersion = '0.0.0';
+    }
+
+    // In semver 0.x, breaking changes bump minor not major
+    // (0.x versions are considered unstable, anything can break)
+    if (bumpType === 'major' && fromVersion.startsWith('0.')) {
+      bumpType = 'minor';
     }
 
     const toVersion = this.calculateNextVersion(fromVersion, bumpType);

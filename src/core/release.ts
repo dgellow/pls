@@ -176,9 +176,8 @@ export class ReleaseManager {
       console.warn(`⚠️  Failed to update ${error.path}: ${error.error}`);
     }
 
-    // Update .pls/versions.json
-    await setVersionsManifest(version);
-    console.log(`📋 Updated .pls/versions.json`);
+    // Note: .pls/versions.json is updated after commit with SHA in createRelease
+    console.log(`📦 Updated manifest versions`);
   }
 
   async createRelease(
@@ -235,6 +234,23 @@ export class ReleaseManager {
       const shaResult = await shaCommand.output();
       if (shaResult.code === 0) {
         release.sha = new TextDecoder().decode(shaResult.stdout).trim();
+      }
+
+      // Update .pls/versions.json with version AND SHA, then amend commit
+      await setVersionsManifest(bump.to, '.', Deno.cwd(), release.sha);
+      console.log(`📋 Updated .pls/versions.json`);
+
+      await new Deno.Command('git', { args: ['add', '.pls/versions.json'] }).output();
+      await new Deno.Command('git', {
+        args: ['commit', '--amend', '--no-edit'],
+      }).output();
+
+      // Update SHA again after amend
+      const amendedShaResult = await new Deno.Command('git', {
+        args: ['rev-parse', 'HEAD'],
+      }).output();
+      if (amendedShaResult.code === 0) {
+        release.sha = new TextDecoder().decode(amendedShaResult.stdout).trim();
       }
 
       // Create git tag locally (on the new commit)
