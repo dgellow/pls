@@ -238,8 +238,21 @@ export class ReleasePullRequest {
     denoJson.version = bump.to;
     const newDenoJson = JSON.stringify(denoJson, null, 2) + '\n';
 
-    // Create blob for updated deno.json
-    const blob = await this.request<{ sha: string }>(
+    // Get current .pls/versions.json content (or create new)
+    let versionsContent: Record<string, string>;
+    try {
+      const file = await this.request<{ content: string }>(
+        `/repos/${this.owner}/${this.repo}/contents/.pls/versions.json?ref=${this.baseBranch}`,
+      );
+      versionsContent = JSON.parse(atob(file.content.replace(/\n/g, '')));
+    } catch {
+      versionsContent = {};
+    }
+    versionsContent['.'] = bump.to;
+    const newVersionsJson = JSON.stringify(versionsContent, null, 2) + '\n';
+
+    // Create blobs for both files
+    const denoBlob = await this.request<{ sha: string }>(
       `/repos/${this.owner}/${this.repo}/git/blobs`,
       {
         method: 'POST',
@@ -250,7 +263,18 @@ export class ReleasePullRequest {
       },
     );
 
-    // Create tree with updated file
+    const versionsBlob = await this.request<{ sha: string }>(
+      `/repos/${this.owner}/${this.repo}/git/blobs`,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          content: newVersionsJson,
+          encoding: 'utf-8',
+        }),
+      },
+    );
+
+    // Create tree with updated files
     const tree = await this.request<{ sha: string }>(
       `/repos/${this.owner}/${this.repo}/git/trees`,
       {
@@ -262,7 +286,13 @@ export class ReleasePullRequest {
               path: 'deno.json',
               mode: '100644',
               type: 'blob',
-              sha: blob.sha,
+              sha: denoBlob.sha,
+            },
+            {
+              path: '.pls/versions.json',
+              mode: '100644',
+              type: 'blob',
+              sha: versionsBlob.sha,
             },
           ],
         }),

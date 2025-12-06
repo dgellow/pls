@@ -2,6 +2,7 @@ import type { Commit, Release, Storage, VersionBump } from '../types.ts';
 import { PlsError } from '../types.ts';
 import { ensureFile } from '@std/fs';
 import { updateAllVersions } from '../manifest/mod.ts';
+import { setVersion as setVersionsManifest } from '../versions/mod.ts';
 
 export class ReleaseManager {
   constructor(private storage: Storage) {}
@@ -157,6 +158,14 @@ export class ReleaseManager {
 
     for (const error of result.errors) {
       console.warn(`⚠️  Failed to update ${error.path}: ${error.error}`);
+    }
+
+    // Update .pls/versions.json
+    if (dryRun) {
+      console.log(`📋 Would update .pls/versions.json`);
+    } else {
+      await setVersionsManifest(version);
+      console.log(`📋 Updated .pls/versions.json`);
     }
   }
 

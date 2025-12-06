@@ -3,6 +3,7 @@ import { bold, cyan, green, red, yellow } from '@std/fmt/colors';
 import { createStorage } from './storage/mod.ts';
 import { Detector, ReleaseManager, ReleasePullRequest, Version } from './core/mod.ts';
 import { PlsError } from './types.ts';
+import { getVersion as getVersionFromManifest, hasVersionsManifest } from './versions/mod.ts';
 
 export function printPRHelp(): void {
   console.log(`
@@ -62,7 +63,18 @@ export async function handlePR(args: string[]): Promise<void> {
       }
     }
 
-    // Get last release from GitHub
+    // Get current version - priority: .pls/versions.json > GitHub releases > deno.json
+    let currentVersion: string | null = null;
+
+    // Try .pls/versions.json first
+    if (await hasVersionsManifest()) {
+      currentVersion = await getVersionFromManifest();
+      if (currentVersion) {
+        console.log(`📋 Current version (from .pls/versions.json): ${cyan(currentVersion)}`);
+      }
+    }
+
+    // Fall back to GitHub releases
     const storage = createStorage('github', {
       owner: repoInfo.owner,
       repo: repoInfo.repo,
@@ -71,12 +83,25 @@ export async function handlePR(args: string[]): Promise<void> {
 
     const lastRelease = await storage.getLastRelease();
     if (lastRelease) {
-      console.log(`📌 Last release: ${cyan(lastRelease.tag)}`);
-    } else {
-      console.log(`📌 No previous releases found`);
+      if (!currentVersion) {
+        currentVersion = lastRelease.version;
+        console.log(`📌 Current version (from GitHub): ${cyan(lastRelease.tag)}`);
+      }
     }
 
-    // Detect changes
+    // Fall back to deno.json/package.json
+    if (!currentVersion) {
+      const version = new Version();
+      currentVersion = await version.getCurrentVersion();
+      if (currentVersion) {
+        console.log(`📦 Current version (from manifest): ${cyan(currentVersion)}`);
+      } else {
+        currentVersion = '0.0.0';
+        console.log(`📦 No version found, starting from ${cyan('0.0.0')}`);
+      }
+    }
+
+    // Detect changes since last release
     console.log(`\n🔍 Detecting changes...`);
     const changes = await detector.detectChanges(lastRelease);
 
@@ -89,10 +114,7 @@ export async function handlePR(args: string[]): Promise<void> {
 
     // Determine version bump
     const version = new Version();
-    const bump = await version.determineVersionBump(
-      lastRelease?.version || null,
-      changes.commits,
-    );
+    const bump = await version.determineVersionBump(currentVersion, changes.commits);
 
     if (!bump) {
       console.log(yellow('ℹ️  No version bump needed'));
