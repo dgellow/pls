@@ -7,8 +7,9 @@ import { Detector, ReleaseManager, Version } from './core/mod.ts';
 import { PlsError } from './types.ts';
 import { handleTransition } from './cli-transition.ts';
 import { handlePR } from './cli-pr.ts';
+import denoJson from '../deno.json' with { type: 'json' };
 
-const VERSION = '0.1.0';
+const VERSION = denoJson.version;
 
 async function cloneToTemp(repoUrl: string): Promise<string> {
   const tempDir = await Deno.makeTempDir({ prefix: 'pls-' });
