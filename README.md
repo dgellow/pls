@@ -82,20 +82,26 @@ pls pr sync --pr=123
 
 ### PR Description Format
 
-The PR description includes a selection block:
+The PR description includes a version selection block in a collapsible section:
 
 ```markdown
-<!-- pls:options -->
+<details>
+<summary>Version Selection</summary>
 
-- [x] **1.3.0** (minor) <!-- pls:v:1.3.0:minor -->
+<!-- pls:options -->
+**Current: 1.3.0** (minor) <!-- pls:v:1.3.0:minor:current -->
+
+Switch to:
 - [ ] 1.3.0-alpha.0 (alpha) <!-- pls:v:1.3.0-alpha.0:transition -->
 - [ ] 1.3.0-beta.0 (beta) <!-- pls:v:1.3.0-beta.0:transition -->
 - [ ] 1.3.0-rc.0 (rc) <!-- pls:v:1.3.0-rc.0:transition -->
-
 <!-- pls:options:end -->
+
+</details>
 ```
 
-HTML comments provide reliable parsing while checkboxes give visual UX.
+The current selection is displayed as text (no checkbox to avoid double-click issues).
+Alternatives have checkboxes - checking one triggers a sync workflow.
 
 ### Single Commit Principle
 
