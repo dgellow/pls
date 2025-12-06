@@ -5,11 +5,40 @@ import { bold, cyan, green, red, yellow } from '@std/fmt/colors';
 import { createStorage } from './storage/mod.ts';
 import { Detector, ReleaseManager, Version } from './core/mod.ts';
 import { PlsError } from './types.ts';
+import type { VersionBump } from './types.ts';
 import { handleTransition } from './cli-transition.ts';
 import { handlePR } from './cli-pr.ts';
 import denoJson from '../deno.json' with { type: 'json' };
 
 const VERSION = denoJson.version;
+
+/**
+ * Check if the current HEAD commit is a release commit.
+ * Returns the version from the commit message if it is, null otherwise.
+ */
+async function getReleaseCommitVersion(): Promise<string | null> {
+  try {
+    const command = new Deno.Command('git', {
+      args: ['log', '-1', '--pretty=%B'],
+    });
+    const { code, stdout } = await command.output();
+
+    if (code !== 0) {
+      return null;
+    }
+
+    const message = new TextDecoder().decode(stdout).trim();
+    // Match "chore: release v1.2.3" or "chore: release v1.2.3-beta.1"
+    const match = message.match(/^chore: release v(\d+\.\d+\.\d+(?:-[\w.]+)?)/);
+    if (match) {
+      return match[1];
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+}
 
 async function cloneToTemp(repoUrl: string): Promise<string> {
   const tempDir = await Deno.makeTempDir({ prefix: 'pls-' });
@@ -180,6 +209,59 @@ async function main(): Promise<void> {
 
     console.log(`💾 Using storage: ${cyan(args.storage)}`);
 
+    // Check if the current commit is already a release commit
+    // This happens when a release PR is merged - we should just create the tag/release
+    // without recalculating the version (which could cause a double bump)
+    const releaseCommitVersion = await getReleaseCommitVersion();
+    const currentSha = await detector.getCurrentSha();
+
+    if (releaseCommitVersion) {
+      console.log(`📌 Current commit is a release commit for v${cyan(releaseCommitVersion)}`);
+
+      // Check if release already exists for this version
+      const lastRelease = await storage.getLastRelease();
+      if (lastRelease?.version === releaseCommitVersion) {
+        console.log(yellow(`ℹ️  Release v${releaseCommitVersion} already exists`));
+        return;
+      }
+
+      // Create release for the version in the commit message
+      // This avoids recalculating the version which could cause issues
+      const releaseManager = new ReleaseManager(storage);
+      const isDryRun = !args.execute;
+
+      if (isDryRun) {
+        console.log(yellow('\n🔍 DRY RUN MODE (use --execute to create release)\n'));
+      }
+
+      // Create a synthetic bump object for the release
+      const bump: VersionBump = {
+        from: lastRelease?.version || '0.0.0',
+        to: releaseCommitVersion,
+        type: 'patch', // Type doesn't matter here, just for display
+        commits: [],
+      };
+
+      console.log(`\n📊 Creating release: ${green(`v${releaseCommitVersion}`)}`);
+
+      const tagStrategy = args['tag-strategy'] as 'github' | 'git';
+      const release = await releaseManager.createReleaseFromCommit(
+        releaseCommitVersion,
+        currentSha,
+        isDryRun,
+        tagStrategy,
+      );
+
+      if (!isDryRun) {
+        console.log(`\n✅ Release ${green(release.tag)} created successfully!`);
+        if (release.url) {
+          console.log(`🔗 ${release.url}`);
+        }
+      }
+      return;
+    }
+
+    // Normal flow: detect changes and calculate version bump
     // Get last release
     const lastRelease = await storage.getLastRelease();
     if (lastRelease) {
