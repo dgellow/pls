@@ -1,6 +1,6 @@
 {
   "name": "@dgellow/pls",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "license": "Elastic-2.0",
   "exports": {
     ".": "./src/mod.ts",
@@ -22,7 +22,9 @@
   },
   "lint": {
     "rules": {
-      "tags": ["recommended"]
+      "tags": [
+        "recommended"
+      ]
     }
   },
   "imports": {
