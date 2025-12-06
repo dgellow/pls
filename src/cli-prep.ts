@@ -2,7 +2,9 @@ import { parseArgs } from '@std/cli/parse-args';
 import { bold, cyan, green, red, yellow } from '@std/fmt/colors';
 import { createStorage } from './storage/mod.ts';
 import {
+  type DebugEntry,
   Detector,
+  generateDebugEntry,
   parseOptionsBlock,
   PRComments,
   ReleaseManager,
@@ -128,15 +130,20 @@ async function handleCreateOrUpdate(
   isDryRun: boolean,
   targetPrNumber?: number | null,
 ): Promise<void> {
+  // Debug info collection
+  const debugDetails: Record<string, string> = {};
+
   // Get current version and SHA - priority: .pls/versions.json > GitHub releases > deno.json
   let currentVersion: string | null = null;
   let lastRelease: Release | null = null;
+  let versionSource = 'unknown';
 
   // Try .pls/versions.json first (includes SHA for accurate commit range)
   if (await hasVersionsManifest()) {
     currentVersion = await getVersionFromManifest();
     const manifestSha = await getShaFromManifest();
     if (currentVersion) {
+      versionSource = '.pls/versions.json';
       console.log(`Current version (from .pls/versions.json): ${cyan(currentVersion)}`);
       if (manifestSha) {
         // Validate SHA exists in repo (may be stale after squash/rebase merge)
@@ -150,6 +157,7 @@ async function handleCreateOrUpdate(
             createdAt: new Date(),
           };
           console.log(`Last release SHA: ${cyan(manifestSha.substring(0, 7))}`);
+          debugDetails['SHA validated'] = manifestSha.substring(0, 7);
         } else {
           console.log(
             yellow(
@@ -157,6 +165,7 @@ async function handleCreateOrUpdate(
             ),
           );
           console.log(`Will fall back to GitHub releases for commit range`);
+          debugDetails['SHA validation'] = `${manifestSha.substring(0, 7)} stale, using GitHub`;
         }
       }
     }
@@ -174,8 +183,10 @@ async function handleCreateOrUpdate(
     if (lastRelease) {
       if (!currentVersion) {
         currentVersion = lastRelease.version;
+        versionSource = 'GitHub releases';
       }
       console.log(`Current version (from GitHub): ${cyan(lastRelease.tag)}`);
+      debugDetails['SHA validated'] = lastRelease.sha?.substring(0, 7) || 'from GitHub release';
     }
   }
 
@@ -184,12 +195,16 @@ async function handleCreateOrUpdate(
     const version = new Version();
     currentVersion = await version.getCurrentVersion();
     if (currentVersion) {
+      versionSource = 'manifest (deno.json)';
       console.log(`Current version (from manifest): ${cyan(currentVersion)}`);
     } else {
       currentVersion = '0.0.0';
+      versionSource = 'default';
       console.log(`No version found, starting from ${cyan('0.0.0')}`);
     }
   }
+
+  debugDetails['Base version'] = `${currentVersion} (${versionSource})`;
 
   // Detect changes since last release
   console.log(`\nDetecting changes...`);
@@ -201,6 +216,7 @@ async function handleCreateOrUpdate(
   }
 
   console.log(`Found ${green(String(changes.commits.length))} commits`);
+  debugDetails['Commits analyzed'] = String(changes.commits.length);
 
   // Determine version bump
   const version = new Version();
@@ -212,6 +228,8 @@ async function handleCreateOrUpdate(
   }
 
   console.log(`Version bump: ${cyan(bump.from)} -> ${green(bump.to)} (${bump.type})`);
+  debugDetails['Bump type'] = bump.type;
+  debugDetails['Target version'] = bump.to;
 
   // Generate changelog
   const releaseManager = new ReleaseManager(storage);
@@ -248,15 +266,20 @@ async function handleCreateOrUpdate(
       }
 
       console.log(`Selection changed: ${cyan(oldVersion || 'unknown')} -> ${green(newVersion)}`);
+      debugDetails['Selection changed'] = `${oldVersion || 'unknown'} → ${newVersion}`;
     }
   }
+
+  // Create debug entry
+  const command = targetPrNumber ? `pls prep --github-pr=${targetPrNumber}` : 'pls prep';
+  const debugEntry: DebugEntry = generateDebugEntry(command, debugDetails);
 
   // Create or update PR
   if (isDryRun) {
     console.log(yellow('\nDRY RUN (use --execute to create PR)\n'));
   }
 
-  const result = await pr.createOrUpdate(bump, changelog, isDryRun);
+  const result = await pr.createOrUpdate(bump, changelog, isDryRun, debugEntry);
 
   if (!isDryRun && result.url) {
     console.log(`\nRelease PR ready: ${green(result.url)}`);
