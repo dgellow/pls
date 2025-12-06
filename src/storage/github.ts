@@ -11,10 +11,11 @@ interface GitHubRelease {
   target_commitish: string;
 }
 
-interface GitHubTag {
-  name: string;
-  commit: {
+interface GitHubRef {
+  ref: string;
+  object: {
     sha: string;
+    type: string;
   };
 }
 
@@ -90,6 +91,29 @@ export class GitHubStorage implements Storage {
     return data;
   }
 
+  private async getTagSha(tagName: string): Promise<string | null> {
+    try {
+      const ref = await this.request<GitHubRef>(
+        `/repos/${this.owner}/${this.repo}/git/ref/tags/${tagName}`,
+      );
+
+      // For annotated tags, object.type is "tag" and we need to dereference
+      // For lightweight tags, object.type is "commit" and sha is the commit
+      if (ref.object.type === 'tag') {
+        // Annotated tag - need to get the tag object to find the commit
+        const tagObj = await this.request<{ object: { sha: string } }>(
+          `/repos/${this.owner}/${this.repo}/git/tags/${ref.object.sha}`,
+        );
+        return tagObj.object.sha;
+      }
+
+      return ref.object.sha;
+    } catch {
+      // Tag might not exist or be in a different format
+      return null;
+    }
+  }
+
   async getLastRelease(): Promise<Release | null> {
     try {
       const releases = await this.request<GitHubRelease[]>(
@@ -101,10 +125,15 @@ export class GitHubStorage implements Storage {
       }
 
       const latest = releases[0];
+
+      // target_commitish is often just the branch name, not the SHA
+      // Look up the actual commit SHA from the tag
+      const tagSha = await this.getTagSha(latest.tag_name);
+
       return {
         version: latest.tag_name.replace(/^v/, ''),
         tag: latest.tag_name,
-        sha: latest.target_commitish,
+        sha: tagSha || latest.target_commitish,
         createdAt: new Date(latest.created_at),
         notes: latest.body,
         url: latest.html_url,
