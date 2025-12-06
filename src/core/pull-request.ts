@@ -70,7 +70,7 @@ export class ReleasePullRequest {
   }
 
   private get releaseBranch(): string {
-    return 'release-please--branches--main';
+    return 'pls-release';
   }
 
   async findExisting(): Promise<PullRequest | null> {
@@ -239,7 +239,8 @@ export class ReleasePullRequest {
     const newDenoJson = JSON.stringify(denoJson, null, 2) + '\n';
 
     // Get current .pls/versions.json content (or create new)
-    let versionsContent: Record<string, string>;
+    // Note: SHA will be set after merge when release is finalized
+    let versionsContent: Record<string, string | { version: string; sha?: string }>;
     try {
       const file = await this.request<{ content: string }>(
         `/repos/${this.owner}/${this.repo}/contents/.pls/versions.json?ref=${this.baseBranch}`,
@@ -248,7 +249,10 @@ export class ReleasePullRequest {
     } catch {
       versionsContent = {};
     }
-    versionsContent['.'] = bump.to;
+    // Keep existing SHA if present, otherwise just set version
+    const existing = versionsContent['.'];
+    const existingSha = existing && typeof existing === 'object' ? existing.sha : undefined;
+    versionsContent['.'] = existingSha ? { version: bump.to, sha: existingSha } : bump.to;
     const newVersionsJson = JSON.stringify(versionsContent, null, 2) + '\n';
 
     // Create blobs for both files
