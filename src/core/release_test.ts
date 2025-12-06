@@ -227,3 +227,43 @@ Deno.test('ReleaseManager - createRelease in dry run mode', async () => {
   // But should return release object
   assertEquals(release.version, '1.1.0');
 });
+
+Deno.test('ReleaseManager - createReleaseFromCommit uses provided notes', async () => {
+  const storage = new MockStorage();
+  const manager = new ReleaseManager(storage);
+
+  const notes = `## 1.2.0
+
+### Features
+
+- add awesome feature (abc1234)
+- add another feature (def5678)`;
+
+  const release = await manager.createReleaseFromCommit(
+    '1.2.0',
+    'abc123',
+    true, // dry run
+    'github',
+    notes,
+  );
+
+  assertEquals(release.version, '1.2.0');
+  assertEquals(release.tag, 'v1.2.0');
+  assertEquals(release.notes, notes);
+});
+
+Deno.test('ReleaseManager - createReleaseFromCommit uses default notes when not provided', async () => {
+  const storage = new MockStorage();
+  const manager = new ReleaseManager(storage);
+
+  const release = await manager.createReleaseFromCommit(
+    '1.2.0',
+    'abc123',
+    true, // dry run
+    'github',
+    // no notes provided
+  );
+
+  assertEquals(release.version, '1.2.0');
+  assertEquals(release.notes, 'Release 1.2.0');
+});
