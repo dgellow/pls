@@ -20,3 +20,10 @@ export {
   type VersionOption,
 } from './pr-options.ts';
 export { type PRCommentOptions, PRComments } from './pr-comments.ts';
+export {
+  appendDebugEntry,
+  type DebugEntry,
+  generateDebugBlock,
+  generateDebugEntry,
+  parseDebugBlock,
+} from './pr-debug.ts';

@@ -8,6 +8,7 @@ import {
   parseOptionsBlock,
   type VersionOption,
 } from './pr-options.ts';
+import { type DebugEntry, generateDebugBlock, parseDebugBlock } from './pr-debug.ts';
 
 export interface PullRequestOptions {
   owner: string;
@@ -105,17 +106,20 @@ export class ReleasePullRequest {
     bump: VersionBump,
     changelog: string,
     dryRun: boolean,
+    debugEntry?: DebugEntry,
   ): Promise<PullRequest> {
     // Check for existing PR first to preserve user's version selection
     const existing = await this.findExisting();
 
     let selectedVersion = bump.to;
     let existingOptions: VersionOption[] | undefined;
+    let existingBody: string | undefined;
 
     // If PR exists, check if user has selected a different version
     if (existing) {
       const existingPR = await this.getPR(existing.number);
-      const parsed = parseOptionsBlock(existingPR.body || '');
+      existingBody = existingPR.body || '';
+      const parsed = parseOptionsBlock(existingBody);
       if (parsed?.selected) {
         // User has a selection - preserve it along with the existing options
         selectedVersion = parsed.selected.version;
@@ -136,7 +140,14 @@ export class ReleasePullRequest {
     };
 
     // Generate body - use existing options if preserving selection
-    const body = this.generatePRBody(effectiveBump, changelog, bump.from, existingOptions);
+    const body = this.generatePRBody(
+      effectiveBump,
+      changelog,
+      bump.from,
+      existingOptions,
+      debugEntry,
+      existingBody,
+    );
 
     if (dryRun) {
       console.log(`Would create/update release PR:`);
@@ -374,6 +385,8 @@ export class ReleasePullRequest {
     changelog: string,
     currentVersion: string,
     existingOptions?: VersionOption[],
+    debugEntry?: DebugEntry,
+    existingBody?: string,
   ): string {
     // Use existing options if provided (preserving user's selection),
     // otherwise generate fresh options
@@ -383,7 +396,7 @@ export class ReleasePullRequest {
     // Strip the version header from changelog (it's redundant with PR title)
     const changelogContent = changelog.replace(/^## \d+\.\d+\.\d+.*\n\n/, '');
 
-    return `## Release ${bump.to}
+    let body = `## Release ${bump.to}
 
 This PR was automatically created by pls.
 
@@ -401,8 +414,18 @@ Select a version option below. The branch will be updated when the workflow runs
 
 ${optionsBlock}
 
-</details>
-`;
+</details>`;
+
+    // Add debug entry if provided
+    if (debugEntry) {
+      // Preserve existing debug entries from previous body
+      const existingEntries = existingBody ? parseDebugBlock(existingBody) : [];
+      const allEntries = [...existingEntries, debugEntry].slice(-10);
+      const debugBlock = generateDebugBlock(allEntries);
+      body = body + '\n' + debugBlock;
+    }
+
+    return body;
   }
 
   /**
