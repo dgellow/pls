@@ -300,3 +300,43 @@ Switch to:
   assertEquals(versions.includes('1.3.0-alpha.0'), true);
   assertEquals(versions.includes('1.3.0-beta.0'), true);
 });
+
+Deno.test('regenerating body with preserved options produces correct header', () => {
+  // This tests the fix for: PR body header not updating during sync
+  // When user selects alpha, but body still shows "## Release 1.3.0"
+
+  // Simulate existing PR body where user checked alpha
+  const existingBody = `## Release 1.3.0
+
+<!-- pls:options -->
+**Current: 1.3.0** (minor) <!-- pls:v:1.3.0:minor:current -->
+
+Switch to:
+- [x] 1.3.0-alpha.0 (alpha) <!-- pls:v:1.3.0-alpha.0:transition -->
+- [ ] 1.3.0-beta.0 (beta) <!-- pls:v:1.3.0-beta.0:transition -->
+<!-- pls:options:end -->`;
+
+  // Parse to get selected version and preserved options
+  const parsed = parseOptionsBlock(existingBody);
+  assertExists(parsed);
+  assertEquals(parsed.selected?.version, '1.3.0-alpha.0');
+
+  // Update options to mark alpha as selected (simulating what createOrUpdate does)
+  const updatedOptions = parsed.options.map((opt) => ({
+    ...opt,
+    selected: opt.version === '1.3.0-alpha.0',
+  }));
+
+  // Regenerate options block
+  const newOptionsBlock = generateOptionsBlock(updatedOptions);
+
+  // The new block should show alpha as current (no checkbox)
+  assertEquals(newOptionsBlock.includes('**Current: 1.3.0-alpha.0**'), true);
+  assertEquals(
+    newOptionsBlock.includes('<!-- pls:v:1.3.0-alpha.0:transition:current -->'),
+    true,
+  );
+
+  // And 1.3.0 should now be an alternative with checkbox
+  assertEquals(newOptionsBlock.includes('- [ ] 1.3.0 (minor)'), true);
+});
