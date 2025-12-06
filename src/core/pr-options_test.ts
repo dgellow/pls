@@ -170,3 +170,55 @@ Deno.test('parseOptionsBlock - handles disabled options', () => {
   assertEquals(alpha.disabled, true);
   assertEquals(alpha.disabledReason, 'already past alpha');
 });
+
+Deno.test('parseOptionsBlock - picks first when multiple selected', () => {
+  const body = `<!-- pls:options -->
+- [x] **1.3.0** (minor) <!-- pls:v:1.3.0:minor -->
+- [x] **1.3.0-alpha.0** (alpha) <!-- pls:v:1.3.0-alpha.0:transition -->
+- [x] **1.3.0-beta.0** (beta) <!-- pls:v:1.3.0-beta.0:transition -->
+<!-- pls:options:end -->`;
+
+  const parsed = parseOptionsBlock(body);
+  assertExists(parsed);
+
+  // Should pick the first selected option
+  assertEquals(parsed.selected?.version, '1.3.0');
+});
+
+Deno.test('parseOptionsBlock - returns null for empty body', () => {
+  const parsed = parseOptionsBlock('');
+  assertEquals(parsed, null);
+});
+
+Deno.test('parseOptionsBlock - handles malformed options block', () => {
+  // Missing end marker
+  const body1 = `<!-- pls:options -->
+- [x] **1.3.0** (minor) <!-- pls:v:1.3.0:minor -->`;
+  assertEquals(parseOptionsBlock(body1), null);
+
+  // Missing start marker
+  const body2 = `- [x] **1.3.0** (minor) <!-- pls:v:1.3.0:minor -->
+<!-- pls:options:end -->`;
+  assertEquals(parseOptionsBlock(body2), null);
+
+  // End before start
+  const body3 = `<!-- pls:options:end -->
+- [x] **1.3.0** (minor) <!-- pls:v:1.3.0:minor -->
+<!-- pls:options -->`;
+  assertEquals(parseOptionsBlock(body3), null);
+});
+
+Deno.test('parseOptionsBlock - handles options block with no valid options', () => {
+  const body = `<!-- pls:options -->
+Some random text without proper markers
+<!-- pls:options:end -->`;
+
+  const parsed = parseOptionsBlock(body);
+  assertExists(parsed);
+  assertEquals(parsed.options.length, 0);
+  assertEquals(parsed.selected, null);
+});
+
+Deno.test('getSelectedVersion - returns null for empty body', () => {
+  assertEquals(getSelectedVersion(''), null);
+});
