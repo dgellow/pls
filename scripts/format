@@ -1,5 +1,4 @@
 #!/bin/sh
-# Format code
 set -e
 
 deno fmt

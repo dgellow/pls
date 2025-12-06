@@ -1,7 +1,18 @@
 #!/bin/sh
-# Bootstrap the project (install dependencies, setup environment)
 set -e
 
-# Deno caches dependencies automatically on first run
-# This ensures all dependencies are downloaded
-deno cache src/mod.ts src/cli.ts
+if ! command -v deno >/dev/null 2>&1; then
+  echo "Deno not found. Installing..."
+  curl -fsSL https://deno.land/install.sh | sh
+  export DENO_INSTALL="$HOME/.deno"
+  export PATH="$DENO_INSTALL/bin:$PATH"
+  if ! command -v deno >/dev/null 2>&1; then
+    echo "Failed to install deno. Please install manually: https://deno.land/#installation"
+    exit 1
+  fi
+  echo "Deno installed successfully."
+fi
+
+echo "Deno version: $(deno --version | head -1)"
+echo "Caching dependencies..."
+deno install
