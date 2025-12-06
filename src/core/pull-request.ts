@@ -252,20 +252,25 @@ export class ReleasePullRequest {
     const newDenoJson = JSON.stringify(denoJson, null, 2) + '\n';
 
     // Get current .pls/versions.json content (or create new)
-    // Note: SHA will be set after merge when release is finalized
-    let versionsContent: Record<string, string | { version: string; sha?: string }>;
+    // Note: Don't preserve SHA - it becomes stale after squash/rebase merge
+    // SHA is only set from GitHub releases API after merge
+    let versionsContent: Record<string, string>;
     try {
       const file = await this.request<{ content: string }>(
         `/repos/${this.owner}/${this.repo}/contents/.pls/versions.json?ref=${this.baseBranch}`,
       );
-      versionsContent = JSON.parse(atob(file.content.replace(/\n/g, '')));
+      const parsed = JSON.parse(atob(file.content.replace(/\n/g, '')));
+      // Normalize to version-only format (strip any existing SHAs)
+      versionsContent = {};
+      for (const [key, value] of Object.entries(parsed)) {
+        versionsContent[key] = typeof value === 'object' && value !== null
+          ? (value as { version: string }).version
+          : value as string;
+      }
     } catch {
       versionsContent = {};
     }
-    // Keep existing SHA if present, otherwise just set version
-    const existing = versionsContent['.'];
-    const existingSha = existing && typeof existing === 'object' ? existing.sha : undefined;
-    versionsContent['.'] = existingSha ? { version: bump.to, sha: existingSha } : bump.to;
+    versionsContent['.'] = bump.to;
     const newVersionsJson = JSON.stringify(versionsContent, null, 2) + '\n';
 
     // Create blobs for both files
@@ -450,20 +455,24 @@ ${changelog}
     const newDenoJson = JSON.stringify(denoJson, null, 2) + '\n';
 
     // Get/create .pls/versions.json content
-    let versionsContent: Record<string, string | { version: string; sha?: string }>;
+    // Note: Don't preserve SHA - it becomes stale after squash/rebase merge
+    let versionsContent: Record<string, string>;
     try {
       const file = await this.request<{ content: string }>(
         `/repos/${this.owner}/${this.repo}/contents/.pls/versions.json?ref=${baseBranch}`,
       );
-      versionsContent = JSON.parse(atob(file.content.replace(/\n/g, '')));
+      const parsed = JSON.parse(atob(file.content.replace(/\n/g, '')));
+      // Normalize to version-only format (strip any existing SHAs)
+      versionsContent = {};
+      for (const [key, value] of Object.entries(parsed)) {
+        versionsContent[key] = typeof value === 'object' && value !== null
+          ? (value as { version: string }).version
+          : value as string;
+      }
     } catch {
       versionsContent = {};
     }
-    const existing = versionsContent['.'];
-    const existingSha = existing && typeof existing === 'object' ? existing.sha : undefined;
-    versionsContent['.'] = existingSha
-      ? { version: selectedVersion, sha: existingSha }
-      : selectedVersion;
+    versionsContent['.'] = selectedVersion;
     const newVersionsJson = JSON.stringify(versionsContent, null, 2) + '\n';
 
     // Create blobs
