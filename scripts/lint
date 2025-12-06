@@ -1,5 +1,4 @@
 #!/bin/sh
-# Run all quality checks: format check, lint, type check, and tests
 set -e
 
 deno fmt --check

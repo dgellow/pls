@@ -1,5 +1,4 @@
 #!/bin/sh
-# Run tests
 set -e
 
 deno test -A
