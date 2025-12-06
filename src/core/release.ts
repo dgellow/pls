@@ -1,6 +1,7 @@
 import type { Commit, Release, Storage, VersionBump } from '../types.ts';
 import { PlsError } from '../types.ts';
 import { ensureFile } from '@std/fs';
+import { updateAllVersions } from '../manifest/mod.ts';
 
 export class ReleaseManager {
   constructor(private storage: Storage) {}
@@ -143,6 +144,22 @@ export class ReleaseManager {
     return lines.join('\n').trim();
   }
 
+  private async updateManifests(version: string, dryRun: boolean): Promise<void> {
+    const result = await updateAllVersions(version);
+
+    if (result.updated.length > 0) {
+      if (dryRun) {
+        console.log(`📦 Would update version in: ${result.updated.join(', ')}`);
+      } else {
+        console.log(`📦 Updated version in: ${result.updated.join(', ')}`);
+      }
+    }
+
+    for (const error of result.errors) {
+      console.warn(`⚠️  Failed to update ${error.path}: ${error.error}`);
+    }
+  }
+
   async createRelease(
     bump: VersionBump,
     sha: string,
@@ -165,15 +182,34 @@ export class ReleaseManager {
       console.log(`   Tag: ${release.tag}`);
       console.log(`   SHA: ${release.sha}`);
       console.log('');
+
+      // Show what manifests would be updated
+      await this.updateManifests(bump.to, true);
+
+      console.log('');
       console.log('📝 Release Notes:');
       console.log(notes);
       return release;
     }
 
     try {
-      // Create git tag locally
+      // Update version in manifest files first
+      await this.updateManifests(bump.to, false);
+
+      // Commit manifest changes
+      const addCommand = new Deno.Command('git', {
+        args: ['add', '-A'],
+      });
+      await addCommand.output();
+
+      const commitCommand = new Deno.Command('git', {
+        args: ['commit', '-m', `chore: release ${tag}`, '--allow-empty'],
+      });
+      await commitCommand.output();
+
+      // Create git tag locally (on the new commit)
       const tagCommand = new Deno.Command('git', {
-        args: ['tag', '-a', tag, '-m', `Release ${tag}`, sha],
+        args: ['tag', '-a', tag, '-m', `Release ${tag}`],
       });
       const { code, stderr } = await tagCommand.output();
 
@@ -185,15 +221,15 @@ export class ReleaseManager {
         );
       }
 
-      // Push tag to remote
+      // Push commits and tag to remote
       const pushCommand = new Deno.Command('git', {
-        args: ['push', 'origin', tag],
+        args: ['push', 'origin', 'HEAD', '--follow-tags'],
       });
       const pushResult = await pushCommand.output();
 
       if (pushResult.code !== 0) {
         const error = new TextDecoder().decode(pushResult.stderr);
-        console.warn(`Warning: Failed to push tag to remote: ${error}`);
+        console.warn(`Warning: Failed to push to remote: ${error}`);
       }
 
       // Save release to storage
