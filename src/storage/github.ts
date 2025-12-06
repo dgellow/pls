@@ -149,6 +149,9 @@ export class GitHubStorage implements Storage {
   }
 
   async saveRelease(release: Release): Promise<void> {
+    // Check if this is a prerelease version (alpha, beta, rc)
+    const isPrerelease = /-(alpha|beta|rc)\.\d+$/.test(release.version);
+
     try {
       await this.request<GitHubRelease>(
         `/repos/${this.owner}/${this.repo}/releases`,
@@ -159,6 +162,7 @@ export class GitHubStorage implements Storage {
             name: release.tag,
             body: release.notes || '',
             target_commitish: release.sha,
+            prerelease: isPrerelease,
           }),
         },
       );

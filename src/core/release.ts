@@ -193,6 +193,7 @@ export class ReleaseManager {
     sha: string,
     dryRun = false,
     tagStrategy: TagStrategy = 'github',
+    notes?: string,
   ): Promise<Release> {
     const tag = `v${version}`;
 
@@ -201,7 +202,7 @@ export class ReleaseManager {
       tag,
       sha,
       createdAt: new Date(),
-      notes: `Release ${version}`,
+      notes: notes || `Release ${version}`,
     };
 
     if (dryRun) {
@@ -209,6 +210,11 @@ export class ReleaseManager {
       console.log(`  Version: ${release.version}`);
       console.log(`  Tag: ${release.tag}`);
       console.log(`  SHA: ${release.sha}`);
+      if (notes) {
+        console.log('');
+        console.log('Release Notes:');
+        console.log(notes);
+      }
       return release;
     }
 

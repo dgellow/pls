@@ -270,6 +270,21 @@ async function main(): Promise<void> {
       const releaseManager = new ReleaseManager(storage);
       const isDryRun = !args.execute;
 
+      // Generate release notes from commits since last release
+      let releaseNotes: string | undefined;
+      if (lastRelease) {
+        const changes = await detector.detectChanges(lastRelease);
+        if (changes.hasChanges) {
+          const bump = {
+            from: lastRelease.version,
+            to: releaseCommitVersion,
+            type: metadata?.type || 'patch' as const,
+            commits: changes.commits,
+          };
+          releaseNotes = releaseManager.generateReleaseNotes(bump);
+        }
+      }
+
       if (isDryRun) {
         console.log(yellow('\nDRY RUN (use --execute to create release)\n'));
       }
@@ -282,6 +297,7 @@ async function main(): Promise<void> {
         currentSha,
         isDryRun,
         tagStrategy,
+        releaseNotes,
       );
 
       if (!isDryRun) {
