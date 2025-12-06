@@ -10,7 +10,7 @@ permissions:
   pull-requests: write
 
 jobs:
-  # Run CI checks (since GITHUB_TOKEN pushes don't trigger CI workflow)
+  # Run CI checks in parallel (don't block sync)
   lint:
     # Only run for release PRs from pls-release branch
     if: github.head_ref == 'pls-release'
@@ -21,23 +21,13 @@ jobs:
       - uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
+          cache: true
 
       - name: Check formatting
         run: deno fmt --check
 
       - name: Lint
         run: deno lint
-
-  test:
-    # Only run for release PRs from pls-release branch
-    if: github.head_ref == 'pls-release'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: denoland/setup-deno@v2
-        with:
-          deno-version: v2.x
 
       - name: Type check
         run: deno check src/mod.ts src/cli.ts
@@ -46,7 +36,6 @@ jobs:
         run: deno test -A
 
   sync:
-    needs: [lint, test]
     # Only run for release PRs from pls-release branch
     if: github.head_ref == 'pls-release'
     runs-on: ubuntu-latest
@@ -63,6 +52,7 @@ jobs:
       - uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
+          cache: true
 
       - name: Sync PR with selected version
         run: deno run -A src/cli.ts prep --github-pr=${{ github.event.pull_request.number }} --execute
