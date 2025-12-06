@@ -55,7 +55,57 @@ rc (1.3.0-rc.0) --> rc.1 ...
 stable (1.3.0)
 ```
 
-Within any pre-release stage, regular `pls --execute` increments the build number (e.g., alpha.0 -> alpha.1).
+Within any pre-release stage, regular `pls --execute` increments the build number (e.g., alpha.0 ->
+alpha.1).
+
+## Pull Request Workflow
+
+Create release PRs with selectable version options:
+
+```bash
+# Create/update a release PR (dry run)
+pls pr
+
+# Create the PR
+pls pr --execute
+
+# Sync PR when user changes selection
+pls pr sync --pr=123
+```
+
+### How It Works
+
+1. `pls pr --execute` creates a PR with version options in the description
+2. User selects desired version by checking a checkbox
+3. GitHub workflow runs `pls pr sync --pr=123` to apply the selection
+4. On merge, `pls --storage=github --execute --pr=123` creates the release and comments
+
+### PR Description Format
+
+The PR description includes a selection block:
+
+```markdown
+<!-- pls:options -->
+
+- [x] **1.3.0** (minor) <!-- pls:v:1.3.0:minor -->
+- [ ] 1.3.0-alpha.0 (alpha) <!-- pls:v:1.3.0-alpha.0:transition -->
+- [ ] 1.3.0-beta.0 (beta) <!-- pls:v:1.3.0-beta.0:transition -->
+- [ ] 1.3.0-rc.0 (rc) <!-- pls:v:1.3.0-rc.0:transition -->
+
+<!-- pls:options:end -->
+```
+
+HTML comments provide reliable parsing while checkboxes give visual UX.
+
+### Single Commit Principle
+
+The release PR always has exactly ONE commit. When the selection changes:
+
+1. Branch is reset to base
+2. Fresh commit is created with new version
+3. Branch is force-pushed
+4. PR title and description are updated
+5. Comment is posted noting the change
 
 ## Storage Backends
 

@@ -1,6 +1,13 @@
 import type { VersionBump } from '../types.ts';
 import { PlsError } from '../types.ts';
 import { generateReleaseCommitMessage } from './release-metadata.ts';
+import {
+  generateOptions,
+  generateOptionsBlock,
+  getSelectedVersion,
+  parseOptionsBlock,
+  type VersionOption,
+} from './pr-options.ts';
 
 export interface PullRequestOptions {
   owner: string;
@@ -101,7 +108,7 @@ export class ReleasePullRequest {
   ): Promise<PullRequest> {
     const tag = `v${bump.to}`;
     const title = `chore: release ${tag}`;
-    const body = this.generatePRBody(bump, changelog);
+    const body = this.generatePRBody(bump, changelog, bump.from);
 
     if (dryRun) {
       console.log(`Would create/update release PR:`);
@@ -332,10 +339,23 @@ export class ReleasePullRequest {
     );
   }
 
-  private generatePRBody(bump: VersionBump, changelog: string): string {
+  private generatePRBody(
+    bump: VersionBump,
+    changelog: string,
+    currentVersion: string,
+  ): string {
+    const options = generateOptions(currentVersion, bump);
+    const optionsBlock = generateOptionsBlock(options);
+
     return `## Release ${bump.to}
 
 This PR was automatically created by pls.
+
+### Version Selection
+
+Select a version option below. The branch will be updated when the workflow runs.
+
+${optionsBlock}
 
 ### Changes
 
@@ -344,5 +364,193 @@ ${changelog}
 ---
 *Merging this PR will create a GitHub release and tag.*
 `;
+  }
+
+  /**
+   * Get the currently selected version from an existing PR.
+   */
+  async getSelectedVersion(prNumber: number): Promise<string | null> {
+    const pr = await this.request<{ body: string }>(
+      `/repos/${this.owner}/${this.repo}/pulls/${prNumber}`,
+    );
+    return getSelectedVersion(pr.body || '');
+  }
+
+  /**
+   * Get PR details including body.
+   */
+  getPR(prNumber: number): Promise<{
+    number: number;
+    title: string;
+    body: string;
+    head: { ref: string; sha: string };
+    base: { ref: string };
+  }> {
+    return this.request(
+      `/repos/${this.owner}/${this.repo}/pulls/${prNumber}`,
+    );
+  }
+
+  /**
+   * Update PR title and body.
+   */
+  async updatePR(
+    prNumber: number,
+    title: string,
+    body: string,
+  ): Promise<void> {
+    await this.request(
+      `/repos/${this.owner}/${this.repo}/pulls/${prNumber}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ title, body }),
+      },
+    );
+  }
+
+  /**
+   * Sync PR branch with the selected version.
+   * Resets branch to base, creates fresh commit with new version, force pushes.
+   */
+  async syncBranch(
+    prNumber: number,
+    selectedVersion: string,
+    fromVersion: string,
+    bumpType: 'major' | 'minor' | 'patch' | 'transition',
+  ): Promise<void> {
+    const pr = await this.getPR(prNumber);
+    const branchName = pr.head.ref;
+    const baseBranch = pr.base.ref;
+
+    // Get base branch SHA
+    const baseRef = await this.request<{ object: { sha: string } }>(
+      `/repos/${this.owner}/${this.repo}/git/ref/heads/${baseBranch}`,
+    );
+    const baseSha = baseRef.object.sha;
+
+    // Get base tree
+    const baseCommit = await this.request<{ tree: { sha: string } }>(
+      `/repos/${this.owner}/${this.repo}/git/commits/${baseSha}`,
+    );
+
+    // Get current deno.json content
+    let denoJsonContent: string;
+    try {
+      const file = await this.request<{ content: string }>(
+        `/repos/${this.owner}/${this.repo}/contents/deno.json?ref=${baseBranch}`,
+      );
+      denoJsonContent = atob(file.content.replace(/\n/g, ''));
+    } catch {
+      denoJsonContent = '{}';
+    }
+
+    // Update version in deno.json
+    const denoJson = JSON.parse(denoJsonContent);
+    denoJson.version = selectedVersion;
+    const newDenoJson = JSON.stringify(denoJson, null, 2) + '\n';
+
+    // Get/create .pls/versions.json content
+    let versionsContent: Record<string, string | { version: string; sha?: string }>;
+    try {
+      const file = await this.request<{ content: string }>(
+        `/repos/${this.owner}/${this.repo}/contents/.pls/versions.json?ref=${baseBranch}`,
+      );
+      versionsContent = JSON.parse(atob(file.content.replace(/\n/g, '')));
+    } catch {
+      versionsContent = {};
+    }
+    const existing = versionsContent['.'];
+    const existingSha = existing && typeof existing === 'object' ? existing.sha : undefined;
+    versionsContent['.'] = existingSha
+      ? { version: selectedVersion, sha: existingSha }
+      : selectedVersion;
+    const newVersionsJson = JSON.stringify(versionsContent, null, 2) + '\n';
+
+    // Create blobs
+    const denoBlob = await this.request<{ sha: string }>(
+      `/repos/${this.owner}/${this.repo}/git/blobs`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ content: newDenoJson, encoding: 'utf-8' }),
+      },
+    );
+
+    const versionsBlob = await this.request<{ sha: string }>(
+      `/repos/${this.owner}/${this.repo}/git/blobs`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ content: newVersionsJson, encoding: 'utf-8' }),
+      },
+    );
+
+    // Create tree
+    const tree = await this.request<{ sha: string }>(
+      `/repos/${this.owner}/${this.repo}/git/trees`,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          base_tree: baseCommit.tree.sha,
+          tree: [
+            { path: 'deno.json', mode: '100644', type: 'blob', sha: denoBlob.sha },
+            { path: '.pls/versions.json', mode: '100644', type: 'blob', sha: versionsBlob.sha },
+          ],
+        }),
+      },
+    );
+
+    // Create commit
+    const commitMessage = generateReleaseCommitMessage({
+      version: selectedVersion,
+      from: fromVersion,
+      type: bumpType,
+    });
+
+    const commit = await this.request<{ sha: string }>(
+      `/repos/${this.owner}/${this.repo}/git/commits`,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          message: commitMessage,
+          tree: tree.sha,
+          parents: [baseSha],
+        }),
+      },
+    );
+
+    // Force update branch ref
+    await this.request(
+      `/repos/${this.owner}/${this.repo}/git/refs/heads/${branchName}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ sha: commit.sha, force: true }),
+      },
+    );
+  }
+
+  /**
+   * Update PR description to reflect current selection.
+   */
+  updatePRBodySelection(body: string, selectedVersion: string): string {
+    const parsed = parseOptionsBlock(body);
+    if (!parsed) return body;
+
+    // Update options with new selection
+    const updatedOptions: VersionOption[] = parsed.options.map((opt) => ({
+      ...opt,
+      selected: opt.version === selectedVersion && !opt.disabled,
+    }));
+
+    // Generate new options block
+    const newOptionsBlock = generateOptionsBlock(updatedOptions);
+
+    // Replace in body
+    const startMarker = '<!-- pls:options -->';
+    const endMarker = '<!-- pls:options:end -->';
+    const startIndex = body.indexOf(startMarker);
+    const endIndex = body.indexOf(endMarker) + endMarker.length;
+
+    if (startIndex === -1 || endIndex === -1) return body;
+
+    return body.substring(0, startIndex) + newOptionsBlock + body.substring(endIndex);
   }
 }

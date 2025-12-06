@@ -9,3 +9,14 @@ export {
   parseReleaseMetadata,
   type ReleaseMetadata,
 } from './release-metadata.ts';
+export {
+  generateOptions,
+  generateOptionsBlock,
+  getSelectedVersion,
+  hasSelectionChanged,
+  type ParsedOptions,
+  parseOptionsBlock,
+  updateOptionsBlock,
+  type VersionOption,
+} from './pr-options.ts';
+export { type PRCommentOptions, PRComments } from './pr-comments.ts';
