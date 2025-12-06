@@ -586,7 +586,7 @@ ${optionsBlock}
     // Generate new options block
     const newOptionsBlock = generateOptionsBlock(updatedOptions);
 
-    // Replace in body
+    // Replace options block in body
     const startMarker = '<!-- pls:options -->';
     const endMarker = '<!-- pls:options:end -->';
     const startIndex = body.indexOf(startMarker);
@@ -594,7 +594,15 @@ ${optionsBlock}
 
     if (startIndex === -1 || endIndex === -1) return body;
 
-    return body.substring(0, startIndex) + newOptionsBlock + body.substring(endIndex);
+    let updatedBody = body.substring(0, startIndex) + newOptionsBlock + body.substring(endIndex);
+
+    // Also update the "## Release X.X.X" header
+    updatedBody = updatedBody.replace(
+      /^## Release \d+\.\d+\.\d+(?:-[a-z]+\.\d+)?/m,
+      `## Release ${selectedVersion}`,
+    );
+
+    return updatedBody;
   }
 
   /**

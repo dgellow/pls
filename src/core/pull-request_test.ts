@@ -48,3 +48,36 @@ Deno.test('ReleasePullRequest - uses default base branch', () => {
   // Can't directly test private field, but construction should succeed
   assertEquals(pr !== null, true);
 });
+
+Deno.test('ReleasePullRequest - updatePRBodySelection updates header and options', () => {
+  const pr = new ReleasePullRequest({
+    owner: 'test',
+    repo: 'repo',
+    token: 'test-token',
+  });
+
+  const body = `## Release 1.3.0
+
+This PR was automatically created by pls.
+
+<!-- pls:options -->
+**Current: 1.3.0** (minor) <!-- pls:v:1.3.0:minor:current -->
+
+Switch to:
+- [ ] 1.3.0-alpha.0 (alpha) <!-- pls:v:1.3.0-alpha.0:transition -->
+<!-- pls:options:end -->
+
+Some footer content`;
+
+  const updated = pr.updatePRBodySelection(body, '1.3.0-alpha.0');
+
+  // Header should be updated
+  assertEquals(updated.includes('## Release 1.3.0-alpha.0'), true);
+  assertEquals(updated.includes('## Release 1.3.0\n'), false);
+
+  // Options block should show alpha as current
+  assertEquals(updated.includes('**Current: 1.3.0-alpha.0**'), true);
+
+  // Footer should be preserved
+  assertEquals(updated.includes('Some footer content'), true);
+});
