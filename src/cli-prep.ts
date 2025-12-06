@@ -19,25 +19,25 @@ import type { Release } from './types.ts';
 
 export function printPrepHelp(): void {
   console.log(`
-${bold('pls prep')} - Prepare a release (create/update PR or sync selection)
+${bold('pls prep')} - Prepare a release (create/update PR)
 
 ${bold('USAGE:')}
   pls prep [OPTIONS]
 
 ${bold('OPTIONS:')}
   --execute            Actually create/update (default is dry-run)
-  --github-pr <num>    Sync a specific GitHub PR (for webhook triggers)
+  --github-pr <num>    Target a specific GitHub PR (for webhook triggers)
   --base <branch>      Base branch (default: main)
   --owner <owner>      GitHub repository owner (auto-detected from git remote)
   --repo <repo>        GitHub repository name (auto-detected from git remote)
   --token <token>      GitHub token (or set GITHUB_TOKEN env var)
 
 ${bold('DESCRIPTION:')}
-  Without --github-pr: Creates or updates a release PR. If a PR exists,
-  preserves the user's version selection.
+  Creates or updates a release PR. If a PR exists, preserves the user's
+  version selection from the PR description.
 
-  With --github-pr=N: Syncs the specified PR with the user's selected
-  version from the PR description.
+  With --github-pr=N: Targets a specific PR (used by webhook triggers).
+  Will no-op if the PR's selection matches its current version.
 
 ${bold('EXAMPLES:')}
   # Dry run - see what would happen
@@ -93,19 +93,6 @@ export async function handlePrep(args: string[]): Promise<void> {
       }
     }
 
-    // If --github-pr is provided, handle sync mode
-    if (githubPrNumber) {
-      await handleSync(
-        githubPrNumber,
-        repoInfo.owner!,
-        repoInfo.repo!,
-        parsed.token,
-        !parsed.execute,
-      );
-      return;
-    }
-
-    // Otherwise, handle create/update mode
     await handleCreateOrUpdate(
       detector,
       repoInfo.owner!,
@@ -113,6 +100,7 @@ export async function handlePrep(args: string[]): Promise<void> {
       parsed.base,
       parsed.token,
       !parsed.execute,
+      githubPrNumber,
     );
   } catch (error) {
     if (error instanceof PlsError) {
@@ -128,103 +116,8 @@ export async function handlePrep(args: string[]): Promise<void> {
 }
 
 /**
- * Handle sync mode: sync a specific PR with the user's selected version.
- */
-async function handleSync(
-  prNumber: number,
-  owner: string,
-  repo: string,
-  token: string | undefined,
-  isDryRun: boolean,
-): Promise<void> {
-  console.log(`Mode: ${cyan('sync')}`);
-  console.log(`PR: ${cyan(`#${prNumber}`)}`);
-
-  // Initialize PR client
-  const prClient = new ReleasePullRequest({
-    owner,
-    repo,
-    token,
-  });
-
-  // Get PR details
-  const pr = await prClient.getPR(prNumber);
-  console.log(`Title: ${cyan(pr.title)}`);
-  console.log(`Branch: ${cyan(pr.head.ref)}`);
-
-  // Parse options block to get selected version and type
-  const parsedOptions = parseOptionsBlock(pr.body || '');
-  if (!parsedOptions || !parsedOptions.selected) {
-    console.error(`${red('Error:')} Could not find selected version in PR description`);
-    console.error(`The PR may not have been created by pls, or the options block is missing`);
-    Deno.exit(1);
-  }
-
-  const selectedOption = parsedOptions.selected;
-  const selectedVersion = selectedOption.version;
-  const bumpType = selectedOption.type;
-
-  console.log(`Selected version: ${green(selectedVersion)} (${bumpType})`);
-
-  // Extract current version from PR title to check if sync is needed
-  const titleVersionMatch = pr.title.match(/v(\d+\.\d+\.\d+(?:-[a-z]+\.\d+)?)/i);
-  const currentTitleVersion = titleVersionMatch ? titleVersionMatch[1] : null;
-
-  if (currentTitleVersion === selectedVersion) {
-    console.log(yellow('\nNo change detected - PR is already synced to selected version'));
-    return;
-  }
-
-  console.log(`Current PR version: ${cyan(currentTitleVersion || 'unknown')}`);
-
-  // Get the base version from deno.json on base branch
-  const fromVersion = await prClient.getBaseVersion(pr.base.ref);
-  console.log(`Base version: ${cyan(fromVersion)}`);
-
-  if (isDryRun) {
-    console.log(yellow('\nDRY RUN (use --execute to sync)\n'));
-    console.log(`Would sync PR #${prNumber} to version ${selectedVersion}`);
-    console.log(`  - Reset branch ${pr.head.ref} to ${pr.base.ref}`);
-    console.log(`  - Create release commit for ${selectedVersion}`);
-    console.log(`  - Force-push branch`);
-    console.log(`  - Update PR title to: chore: release v${selectedVersion}`);
-    return;
-  }
-
-  // Sync the branch
-  console.log(`\nSyncing branch...`);
-  await prClient.syncBranch(
-    prNumber,
-    selectedVersion,
-    fromVersion,
-    bumpType,
-  );
-  console.log(`Branch synced`);
-
-  // Update PR title and description
-  const newTitle = `chore: release v${selectedVersion}`;
-  const updatedBody = prClient.updatePRBodySelection(pr.body, selectedVersion);
-
-  await prClient.updatePR(prNumber, newTitle, updatedBody);
-  console.log(`PR updated`);
-
-  // Post comment about the change
-  if (currentTitleVersion && currentTitleVersion !== selectedVersion) {
-    const prComments = new PRComments({
-      owner,
-      repo,
-      token,
-    });
-
-    await prComments.commentSelectionChanged(prNumber, currentTitleVersion, selectedVersion);
-    console.log(`Comment posted`);
-  }
-
-  console.log(`\n${green('PR sync complete!')}`);
-}
-
-/**
  * Handle create/update mode: create a new PR or update an existing one.
+ * When targetPrNumber is provided, verify it matches and check for no-op.
  */
 async function handleCreateOrUpdate(
   detector: Detector,
@@ -233,9 +126,8 @@ async function handleCreateOrUpdate(
   baseBranch: string,
   token: string | undefined,
   isDryRun: boolean,
+  targetPrNumber?: number | null,
 ): Promise<void> {
-  console.log(`Mode: ${cyan('create/update')}`);
-
   // Get current version and SHA - priority: .pls/versions.json > GitHub releases > deno.json
   let currentVersion: string | null = null;
   let lastRelease: Release | null = null;
@@ -325,11 +217,7 @@ async function handleCreateOrUpdate(
   const releaseManager = new ReleaseManager(storage);
   const changelog = releaseManager.generateReleaseNotes(bump);
 
-  // Create or update PR
-  if (isDryRun) {
-    console.log(yellow('\nDRY RUN (use --execute to create PR)\n'));
-  }
-
+  // Create PR client
   const pr = new ReleasePullRequest({
     owner,
     repo,
@@ -337,9 +225,47 @@ async function handleCreateOrUpdate(
     baseBranch,
   });
 
+  // If targeting a specific PR, verify it exists and check for no-op
+  let oldVersion: string | null = null;
+  let newVersion: string | null = null;
+
+  if (targetPrNumber) {
+    const existingPR = await pr.getPR(targetPrNumber);
+    console.log(`Target PR: ${cyan(`#${targetPrNumber}`)} - ${existingPR.title}`);
+
+    // Parse selection from PR body
+    const parsed = parseOptionsBlock(existingPR.body || '');
+    if (parsed?.selected) {
+      newVersion = parsed.selected.version;
+
+      // Check if PR is already synced to selected version
+      const titleVersionMatch = existingPR.title.match(/v(\d+\.\d+\.\d+(?:-[a-z]+\.\d+)?)/i);
+      oldVersion = titleVersionMatch ? titleVersionMatch[1] : null;
+
+      if (oldVersion === newVersion) {
+        console.log(yellow('\nNo change detected - PR is already synced to selected version'));
+        return;
+      }
+
+      console.log(`Selection changed: ${cyan(oldVersion || 'unknown')} -> ${green(newVersion)}`);
+    }
+  }
+
+  // Create or update PR
+  if (isDryRun) {
+    console.log(yellow('\nDRY RUN (use --execute to create PR)\n'));
+  }
+
   const result = await pr.createOrUpdate(bump, changelog, isDryRun);
 
   if (!isDryRun && result.url) {
     console.log(`\nRelease PR ready: ${green(result.url)}`);
+
+    // Post comment if this was a sync (selection changed)
+    if (targetPrNumber && oldVersion && newVersion && oldVersion !== newVersion) {
+      const prComments = new PRComments({ owner, repo, token });
+      await prComments.commentSelectionChanged(targetPrNumber, oldVersion, newVersion);
+      console.log(`Comment posted`);
+    }
   }
 }
