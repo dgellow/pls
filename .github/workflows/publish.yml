@@ -45,7 +45,5 @@ jobs:
         run: deno run -A scripts/build_npm.ts ${{ steps.version.outputs.version }}
 
       - name: Publish to npm
-        run: npm publish --access public
+        run: npm publish --access public --provenance
         working-directory: ./npm
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
