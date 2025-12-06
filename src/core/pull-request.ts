@@ -106,9 +106,37 @@ export class ReleasePullRequest {
     changelog: string,
     dryRun: boolean,
   ): Promise<PullRequest> {
-    const tag = `v${bump.to}`;
+    // Check for existing PR first to preserve user's version selection
+    const existing = await this.findExisting();
+
+    let selectedVersion = bump.to;
+    let existingOptions: VersionOption[] | undefined;
+
+    // If PR exists, check if user has selected a different version
+    if (existing) {
+      const existingPR = await this.getPR(existing.number);
+      const parsed = parseOptionsBlock(existingPR.body || '');
+      if (parsed?.selected) {
+        // User has a selection - preserve it along with the existing options
+        selectedVersion = parsed.selected.version;
+        existingOptions = parsed.options;
+        if (selectedVersion !== bump.to) {
+          console.log(`Preserving user's version selection: ${selectedVersion}`);
+        }
+      }
+    }
+
+    const tag = `v${selectedVersion}`;
     const title = `chore: release ${tag}`;
-    const body = this.generatePRBody(bump, changelog, bump.from);
+
+    // Create effective bump with preserved selection for branch updates
+    const effectiveBump: VersionBump = {
+      ...bump,
+      to: selectedVersion,
+    };
+
+    // Generate body - use existing options if preserving selection
+    const body = this.generatePRBody(effectiveBump, changelog, bump.from, existingOptions);
 
     if (dryRun) {
       console.log(`Would create/update release PR:`);
@@ -123,12 +151,9 @@ export class ReleasePullRequest {
       };
     }
 
-    // Check for existing PR
-    const existing = await this.findExisting();
-
     if (existing) {
-      // Update existing PR
-      await this.updateBranch(bump, changelog);
+      // Update existing PR - preserve user's version selection
+      await this.updateBranch(effectiveBump, changelog);
       await this.request<GitHubPR>(
         `/repos/${this.owner}/${this.repo}/pulls/${existing.number}`,
         {
@@ -348,8 +373,11 @@ export class ReleasePullRequest {
     bump: VersionBump,
     changelog: string,
     currentVersion: string,
+    existingOptions?: VersionOption[],
   ): string {
-    const options = generateOptions(currentVersion, bump);
+    // Use existing options if provided (preserving user's selection),
+    // otherwise generate fresh options
+    const options = existingOptions || generateOptions(currentVersion, bump);
     const optionsBlock = generateOptionsBlock(options);
 
     // Strip the version header from changelog (it's redundant with PR title)

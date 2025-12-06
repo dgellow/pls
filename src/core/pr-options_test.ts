@@ -241,3 +241,62 @@ Some random text without proper markers
 Deno.test('getSelectedVersion - returns null for empty body', () => {
   assertEquals(getSelectedVersion(''), null);
 });
+
+Deno.test('generateOptionsBlock - preserves existing options with new selection', () => {
+  // Simulate existing options from a PR body where user selected alpha
+  const existingOptions = [
+    { version: '1.3.0', type: 'minor' as const, label: 'minor', selected: false, disabled: false },
+    {
+      version: '1.3.0-alpha.0',
+      type: 'transition' as const,
+      label: 'alpha',
+      selected: true,
+      disabled: false,
+    },
+    {
+      version: '1.3.0-beta.0',
+      type: 'transition' as const,
+      label: 'beta',
+      selected: false,
+      disabled: false,
+    },
+  ];
+
+  const block = generateOptionsBlock(existingOptions);
+
+  // Alpha should be the current selection (no checkbox)
+  assertEquals(block.includes('**Current: 1.3.0-alpha.0**'), true);
+  assertEquals(block.includes('<!-- pls:v:1.3.0-alpha.0:transition:current -->'), true);
+
+  // Minor should be an alternative with checkbox
+  assertEquals(block.includes('- [ ] 1.3.0 (minor)'), true);
+
+  // Beta should also be an alternative
+  assertEquals(block.includes('- [ ] 1.3.0-beta.0 (beta)'), true);
+});
+
+Deno.test('parseOptionsBlock - keeps all options when preserving selection', () => {
+  // User checks alpha in a PR that has minor as current
+  const body = `<!-- pls:options -->
+**Current: 1.3.0** (minor) <!-- pls:v:1.3.0:minor:current -->
+
+Switch to:
+- [x] 1.3.0-alpha.0 (alpha) <!-- pls:v:1.3.0-alpha.0:transition -->
+- [ ] 1.3.0-beta.0 (beta) <!-- pls:v:1.3.0-beta.0:transition -->
+<!-- pls:options:end -->`;
+
+  const parsed = parseOptionsBlock(body);
+  assertExists(parsed);
+
+  // Should have all 3 options
+  assertEquals(parsed.options.length, 3);
+
+  // Selected should be alpha (first checked alternative)
+  assertEquals(parsed.selected?.version, '1.3.0-alpha.0');
+
+  // All options should be preserved for re-use
+  const versions = parsed.options.map((o) => o.version);
+  assertEquals(versions.includes('1.3.0'), true);
+  assertEquals(versions.includes('1.3.0-alpha.0'), true);
+  assertEquals(versions.includes('1.3.0-beta.0'), true);
+});
