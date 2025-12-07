@@ -26,8 +26,9 @@ function mockFetch(responses: Map<string, unknown>) {
 
 Deno.test('GitHubStorage - getLastRelease', async () => {
   const responses = new Map<string, unknown>();
+  // Mock returns releases in non-chronological order to test sorting
   responses.set(
-    'GET:https://api.github.com/repos/test-owner/test-repo/releases?per_page=1',
+    'GET:https://api.github.com/repos/test-owner/test-repo/releases?per_page=10',
     [
       {
         id: 1,
@@ -58,10 +59,54 @@ Deno.test('GitHubStorage - getLastRelease', async () => {
   }
 });
 
+Deno.test('GitHubStorage - getLastRelease sorts by created_at to find latest', async () => {
+  const responses = new Map<string, unknown>();
+  // Simulate GitHub API returning releases out of chronological order
+  // (e.g., when a non-prerelease appears before a newer prerelease)
+  responses.set(
+    'GET:https://api.github.com/repos/test-owner/test-repo/releases?per_page=10',
+    [
+      {
+        id: 1,
+        tag_name: 'v1.0.0-alpha.0',
+        name: 'v1.0.0-alpha.0',
+        body: 'First alpha',
+        created_at: '2025-01-01T00:00:00Z', // Older
+        html_url: 'https://github.com/test-owner/test-repo/releases/tag/v1.0.0-alpha.0',
+        target_commitish: 'abc123',
+      },
+      {
+        id: 2,
+        tag_name: 'v1.0.0-alpha.1',
+        name: 'v1.0.0-alpha.1',
+        body: 'Second alpha',
+        created_at: '2025-01-02T00:00:00Z', // Newer - should be selected
+        html_url: 'https://github.com/test-owner/test-repo/releases/tag/v1.0.0-alpha.1',
+        target_commitish: 'def456',
+      },
+    ],
+  );
+
+  globalThis.fetch = mockFetch(responses) as typeof fetch;
+
+  try {
+    const storage = new GitHubStorage({ owner: 'test-owner', repo: 'test-repo' });
+    const release = await storage.getLastRelease();
+
+    assertExists(release);
+    // Should return the newer release (alpha.1) even though alpha.0 was listed first
+    assertEquals(release.version, '1.0.0-alpha.1');
+    assertEquals(release.tag, 'v1.0.0-alpha.1');
+    assertEquals(release.sha, 'def456');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 Deno.test('GitHubStorage - getLastRelease returns null when no releases', async () => {
   const responses = new Map<string, unknown>();
   responses.set(
-    'GET:https://api.github.com/repos/test-owner/test-repo/releases?per_page=1',
+    'GET:https://api.github.com/repos/test-owner/test-repo/releases?per_page=10',
     [],
   );
 
