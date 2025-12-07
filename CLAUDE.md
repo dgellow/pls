@@ -252,6 +252,8 @@ Error: GitHub token required for github storage
 
 ## Development Commands
 
+**MANDATORY: Always use the provided scripts. Never run deno fmt, deno lint, or deno test directly.**
+
 ```bash
 # Setup
 ./scripts/bootstrap         # Install deno if needed, cache dependencies
@@ -261,13 +263,30 @@ deno run -A src/cli.ts
 deno run -A src/cli.ts --help
 deno run -A src/cli.ts pr --execute
 
-# Quality checks (ALWAYS use scripts)
-./scripts/lint              # Format check + lint + type check
-./scripts/format            # Format code
-./scripts/test              # Run tests
+# Quality checks - USE THESE SCRIPTS, NOT RAW DENO COMMANDS
+./scripts/format            # Format code (NOT deno fmt)
+./scripts/lint              # Format check + lint + type check (NOT deno lint)
+./scripts/test              # Run tests (NOT deno test)
 
 # CI (runs lint + test)
 deno task ci
+```
+
+### Why Scripts Matter
+
+The scripts handle PATH setup, proper flags, and environment configuration. Running raw deno
+commands may work in some environments but will fail in others. The scripts are the contract.
+
+**WRONG:**
+```bash
+deno fmt src/
+deno test -A src/
+```
+
+**CORRECT:**
+```bash
+./scripts/format
+./scripts/test
 ```
 
 ## Development Environment Notes
