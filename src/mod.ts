@@ -5,6 +5,7 @@ export * from './storage/mod.ts';
 export * from './core/mod.ts';
 export * from './manifest/mod.ts';
 export * from './versions/mod.ts';
+export { VERSION } from './version_info.ts';
 
 // Convenience export for creating a full release pipeline
 import { createStorage, type StorageType } from './storage/mod.ts';
