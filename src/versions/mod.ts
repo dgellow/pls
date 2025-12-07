@@ -6,6 +6,7 @@ const VERSIONS_FILE = '.pls/versions.json';
 export interface VersionEntry {
   version: string;
   sha?: string;
+  versionFile?: string;
 }
 
 export interface VersionsManifest {
@@ -24,6 +25,13 @@ function getVersionFromEntry(entry: string | VersionEntry): string {
  */
 function getShaFromEntry(entry: string | VersionEntry): string | undefined {
   return typeof entry === 'string' ? undefined : entry.sha;
+}
+
+/**
+ * Get versionFile from entry if available
+ */
+function getVersionFileFromEntry(entry: string | VersionEntry): string | undefined {
+  return typeof entry === 'string' ? undefined : entry.versionFile;
 }
 
 /**
@@ -81,6 +89,38 @@ export async function getSha(
 }
 
 /**
+ * Get versionFile path for a specific package path (use "." for root package).
+ */
+export async function getVersionFile(
+  path: string = '.',
+  root: string = Deno.cwd(),
+): Promise<string | null> {
+  const versions = await readVersions(root);
+  const entry = versions[path];
+  if (!entry) return null;
+  return getVersionFileFromEntry(entry) ?? null;
+}
+
+/**
+ * Set versionFile path for a specific package path.
+ */
+export async function setVersionFile(
+  versionFile: string,
+  path: string = '.',
+  root: string = Deno.cwd(),
+): Promise<void> {
+  const versions = await readVersions(root);
+  const existing = versions[path];
+  if (existing && typeof existing !== 'string') {
+    versions[path] = { ...existing, versionFile };
+  } else {
+    const version = existing ? getVersionFromEntry(existing) : '0.0.0';
+    versions[path] = { version, versionFile };
+  }
+  await writeVersions(versions, root);
+}
+
+/**
  * Set version for a specific path.
  */
 export async function setVersion(
@@ -90,17 +130,26 @@ export async function setVersion(
   sha?: string,
 ): Promise<void> {
   const versions = await readVersions(root);
+  const existing = versions[path];
+  const existingSha = existing ? getShaFromEntry(existing) : undefined;
+  const existingVersionFile = existing ? getVersionFileFromEntry(existing) : undefined;
+
+  // Build entry preserving existing fields
+  const entry: VersionEntry = { version };
   if (sha) {
-    versions[path] = { version, sha };
+    entry.sha = sha;
+  } else if (existingSha) {
+    entry.sha = existingSha;
+  }
+  if (existingVersionFile) {
+    entry.versionFile = existingVersionFile;
+  }
+
+  // Use simple string format only if no extra fields
+  if (!entry.sha && !entry.versionFile) {
+    versions[path] = version;
   } else {
-    // Keep existing SHA if present, or use simple format
-    const existing = versions[path];
-    const existingSha = existing ? getShaFromEntry(existing) : undefined;
-    if (existingSha) {
-      versions[path] = { version, sha: existingSha };
-    } else {
-      versions[path] = version;
-    }
+    versions[path] = entry;
   }
   await writeVersions(versions, root);
 }

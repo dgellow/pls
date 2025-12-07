@@ -3,6 +3,7 @@ import { PlsError } from '../types.ts';
 import { ensureFile } from '@std/fs';
 import { updateAllVersions } from '../manifest/mod.ts';
 import { setVersion as setVersionsManifest } from '../versions/mod.ts';
+import { syncVersionFile } from './version-file.ts';
 
 export type TagStrategy = 'github' | 'git';
 
@@ -151,6 +152,7 @@ export class ReleaseManager {
     if (dryRun) {
       // In dry-run, just detect what would be updated without modifying
       const { detectWorkspace } = await import('../manifest/factory.ts');
+      const { resolveVersionFile } = await import('./version-file.ts');
       const workspace = await detectWorkspace();
       const wouldUpdate: string[] = [];
 
@@ -164,6 +166,13 @@ export class ReleaseManager {
       if (wouldUpdate.length > 0) {
         console.log(`Would update version in: ${wouldUpdate.join(', ')}`);
       }
+
+      // Check for version file
+      const versionFilePath = await resolveVersionFile();
+      if (versionFilePath) {
+        console.log(`Would update version file: ${versionFilePath}`);
+      }
+
       console.log(`Would update .pls/versions.json`);
       return;
     }
@@ -176,6 +185,12 @@ export class ReleaseManager {
 
     for (const error of result.errors) {
       console.warn(`Warning: Failed to update ${error.path}: ${error.error}`);
+    }
+
+    // Update version file if configured or found
+    const updatedVersionFile = await syncVersionFile(version);
+    if (updatedVersionFile) {
+      console.log(`Updated version file: ${updatedVersionFile}`);
     }
 
     // Note: .pls/versions.json is updated after commit with SHA in createRelease
