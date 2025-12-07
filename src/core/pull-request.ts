@@ -16,6 +16,8 @@ export interface PullRequestOptions {
   repo: string;
   token?: string;
   baseBranch?: string;
+  /** Optional backend for dependency injection (useful for testing) */
+  backend?: GitHubBackend;
 }
 
 export interface PullRequest {
@@ -37,6 +39,8 @@ export class ReleasePullRequest {
   private repo: string;
   private token: string;
   private baseBranch: string;
+  /** Cached backend for API requests */
+  private backend: GitHubBackend;
 
   constructor(options: PullRequestOptions) {
     this.owner = options.owner;
@@ -50,13 +54,22 @@ export class ReleasePullRequest {
         'GITHUB_AUTH_ERROR',
       );
     }
+
+    // Use injected backend or create one for API requests
+    this.backend = options.backend ?? new GitHubBackend({
+      owner: this.owner,
+      repo: this.repo,
+      token: this.token,
+      baseBranch: this.baseBranch,
+      deferBranchUpdate: true,
+    });
   }
 
   /**
-   * Create a GitHubBackend configured for the release branch.
-   * Uses deferBranchUpdate so we can control when the branch is updated.
+   * Create a GitHubBackend configured for a specific target branch.
+   * Used for commit operations that need to update a specific branch.
    */
-  private createBackend(targetBranch: string = this.releaseBranch): GitHubBackend {
+  private createCommitBackend(targetBranch: string): GitHubBackend {
     return new GitHubBackend({
       owner: this.owner,
       repo: this.repo,
@@ -68,11 +81,10 @@ export class ReleasePullRequest {
   }
 
   /**
-   * Make a GitHub API request using a temporary backend.
+   * Make a GitHub API request using the cached backend.
    */
   private request<T>(path: string, options: RequestInit = {}): Promise<T> {
-    const backend = this.createBackend();
-    return backend.request<T>(path, options);
+    return this.backend.request<T>(path, options);
   }
 
   private get releaseBranch(): string {
@@ -197,7 +209,7 @@ export class ReleasePullRequest {
   }
 
   private async createBranch(bump: VersionBump, _changelog: string): Promise<void> {
-    const backend = this.createBackend();
+    const backend = this.createCommitBackend(this.releaseBranch);
     await backend.ensureBase();
     const baseSha = backend.getBaseSha()!;
 
@@ -234,7 +246,7 @@ export class ReleasePullRequest {
   }
 
   private async updateBranch(bump: VersionBump, _changelog: string): Promise<void> {
-    const backend = this.createBackend();
+    const backend = this.createCommitBackend(this.releaseBranch);
 
     // Create new commit first, THEN update branch ref atomically
     // DO NOT reset branch to base first - that causes GitHub to auto-close
