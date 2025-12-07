@@ -395,6 +395,54 @@ export class ReleasePullRequest {
       }
     }
 
+    // Check for version file in versions.json and update it
+    let versionFilePath: string | null = null;
+    try {
+      const versionsFile = await this.request<{ content: string }>(
+        `/repos/${this.owner}/${this.repo}/contents/.pls/versions.json?ref=${this.baseBranch}`,
+      );
+      const parsedVersions = JSON.parse(atob(versionsFile.content.replace(/\n/g, '')));
+      const rootEntry = parsedVersions['.'];
+      if (rootEntry && typeof rootEntry === 'object' && rootEntry.versionFile) {
+        versionFilePath = rootEntry.versionFile;
+      }
+    } catch {
+      // No versions.json or no versionFile configured
+    }
+
+    if (versionFilePath) {
+      try {
+        const versionFile = await this.request<{ content: string }>(
+          `/repos/${this.owner}/${this.repo}/contents/${versionFilePath}?ref=${this.baseBranch}`,
+        );
+        const versionFileContent = atob(versionFile.content.replace(/\n/g, ''));
+
+        // Update VERSION constant (handles both single and double quotes)
+        const updatedVersionFile = versionFileContent.replace(
+          /^export const VERSION = ["'][^"']+["'];?$/m,
+          `export const VERSION = '${bump.to}';`,
+        );
+
+        if (updatedVersionFile !== versionFileContent) {
+          const versionFileBlob = await this.request<{ sha: string }>(
+            `/repos/${this.owner}/${this.repo}/git/blobs`,
+            {
+              method: 'POST',
+              body: JSON.stringify({ content: updatedVersionFile, encoding: 'utf-8' }),
+            },
+          );
+          treeEntries.push({
+            path: versionFilePath,
+            mode: '100644',
+            type: 'blob',
+            sha: versionFileBlob.sha,
+          });
+        }
+      } catch {
+        // Version file doesn't exist or couldn't be read, skip
+      }
+    }
+
     // Create blob for versions.json
     const newVersionsJson = JSON.stringify(versionsContent, null, 2) + '\n';
     const versionsBlob = await this.request<{ sha: string }>(
