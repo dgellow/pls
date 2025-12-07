@@ -252,7 +252,8 @@ Error: GitHub token required for github storage
 
 ## Development Commands
 
-**MANDATORY: Always use the provided scripts. Never run deno fmt, deno lint, or deno test directly.**
+**MANDATORY: Always use the provided scripts. Never run deno fmt, deno lint, or deno test
+directly.**
 
 ```bash
 # Setup
@@ -278,12 +279,14 @@ The scripts handle PATH setup, proper flags, and environment configuration. Runn
 commands may work in some environments but will fail in others. The scripts are the contract.
 
 **WRONG:**
+
 ```bash
 deno fmt src/
 deno test -A src/
 ```
 
 **CORRECT:**
+
 ```bash
 ./scripts/format
 ./scripts/test
