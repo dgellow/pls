@@ -2,10 +2,12 @@ import { assertEquals } from '@std/assert';
 import {
   getSha,
   getVersion,
+  getVersionFile,
   hasVersionsManifest,
   readVersions,
   setAllVersions,
   setVersion,
+  setVersionFile,
   writeVersions,
 } from './mod.ts';
 
@@ -172,6 +174,123 @@ Deno.test('getVersion - works with both old and new formats', async () => {
     // getVersion should work with both formats
     assertEquals(await getVersion('.', tempDir), '1.0.0');
     assertEquals(await getVersion('packages/a', tempDir), '2.0.0');
+  } finally {
+    await Deno.remove(tempDir, { recursive: true });
+  }
+});
+
+// versionFile tests
+Deno.test('getVersionFile - returns null for old string format', async () => {
+  const tempDir = await Deno.makeTempDir();
+  try {
+    await Deno.mkdir(`${tempDir}/.pls`, { recursive: true });
+    await Deno.writeTextFile(
+      `${tempDir}/.pls/versions.json`,
+      JSON.stringify({ '.': '1.0.0' }),
+    );
+
+    assertEquals(await getVersionFile('.', tempDir), null);
+  } finally {
+    await Deno.remove(tempDir, { recursive: true });
+  }
+});
+
+Deno.test('getVersionFile - returns path from object format', async () => {
+  const tempDir = await Deno.makeTempDir();
+  try {
+    await Deno.mkdir(`${tempDir}/.pls`, { recursive: true });
+    await Deno.writeTextFile(
+      `${tempDir}/.pls/versions.json`,
+      JSON.stringify({
+        '.': { version: '1.0.0', versionFile: 'src/version_info.ts' },
+      }),
+    );
+
+    assertEquals(await getVersionFile('.', tempDir), 'src/version_info.ts');
+  } finally {
+    await Deno.remove(tempDir, { recursive: true });
+  }
+});
+
+Deno.test('setVersionFile - adds versionFile to existing entry', async () => {
+  const tempDir = await Deno.makeTempDir();
+  try {
+    await Deno.mkdir(`${tempDir}/.pls`, { recursive: true });
+    await Deno.writeTextFile(
+      `${tempDir}/.pls/versions.json`,
+      JSON.stringify({ '.': { version: '1.0.0', sha: 'abc123' } }),
+    );
+
+    await setVersionFile('src/version.ts', '.', tempDir);
+
+    const versions = await readVersions(tempDir);
+    assertEquals(versions['.'], {
+      version: '1.0.0',
+      sha: 'abc123',
+      versionFile: 'src/version.ts',
+    });
+  } finally {
+    await Deno.remove(tempDir, { recursive: true });
+  }
+});
+
+Deno.test('setVersionFile - creates entry if none exists', async () => {
+  const tempDir = await Deno.makeTempDir();
+  try {
+    await setVersionFile('src/version.ts', '.', tempDir);
+
+    const versions = await readVersions(tempDir);
+    assertEquals(versions['.'], {
+      version: '0.0.0',
+      versionFile: 'src/version.ts',
+    });
+  } finally {
+    await Deno.remove(tempDir, { recursive: true });
+  }
+});
+
+Deno.test('setVersion - preserves versionFile field', async () => {
+  const tempDir = await Deno.makeTempDir();
+  try {
+    await Deno.mkdir(`${tempDir}/.pls`, { recursive: true });
+    await Deno.writeTextFile(
+      `${tempDir}/.pls/versions.json`,
+      JSON.stringify({
+        '.': { version: '1.0.0', versionFile: 'src/version.ts' },
+      }),
+    );
+
+    await setVersion('2.0.0', '.', tempDir);
+
+    const versions = await readVersions(tempDir);
+    assertEquals(versions['.'], {
+      version: '2.0.0',
+      versionFile: 'src/version.ts',
+    });
+  } finally {
+    await Deno.remove(tempDir, { recursive: true });
+  }
+});
+
+Deno.test('setVersion - preserves both sha and versionFile', async () => {
+  const tempDir = await Deno.makeTempDir();
+  try {
+    await Deno.mkdir(`${tempDir}/.pls`, { recursive: true });
+    await Deno.writeTextFile(
+      `${tempDir}/.pls/versions.json`,
+      JSON.stringify({
+        '.': { version: '1.0.0', sha: 'abc123', versionFile: 'src/version.ts' },
+      }),
+    );
+
+    await setVersion('2.0.0', '.', tempDir, 'def456');
+
+    const versions = await readVersions(tempDir);
+    assertEquals(versions['.'], {
+      version: '2.0.0',
+      sha: 'def456',
+      versionFile: 'src/version.ts',
+    });
   } finally {
     await Deno.remove(tempDir, { recursive: true });
   }

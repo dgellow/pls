@@ -27,3 +27,11 @@ export {
   generateDebugEntry,
   parseDebugBlock,
 } from './pr-debug.ts';
+export {
+  readVersionFile,
+  resolveVersionFile,
+  scanForVersionFile,
+  syncVersionFile,
+  updateVersionFile,
+  type VersionFileResult,
+} from './version-file.ts';
