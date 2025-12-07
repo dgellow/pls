@@ -281,6 +281,8 @@ export class ReleasePullRequest {
    * This allows the caller to update the branch ref atomically, avoiding
    * the race condition where resetting the branch first causes GitHub
    * to auto-close the PR (0 commits = closed).
+   *
+   * Implements lockstep versioning: all workspace packages get the same version.
    */
   private async createReleaseCommitAndGetSha(
     bump: VersionBump,
@@ -301,23 +303,38 @@ export class ReleasePullRequest {
 
     // Get current deno.json content
     let denoJsonContent: string;
+    let workspaceMembers: string[] = [];
     try {
       const file = await this.request<{ content: string }>(
         `/repos/${this.owner}/${this.repo}/contents/deno.json?ref=${this.baseBranch}`,
       );
       denoJsonContent = atob(file.content.replace(/\n/g, ''));
+      const parsed = JSON.parse(denoJsonContent);
+      workspaceMembers = parsed.workspace || [];
     } catch {
       denoJsonContent = '{}';
     }
 
-    // Update version in deno.json
+    // Update version in root deno.json
     const denoJson = JSON.parse(denoJsonContent);
     denoJson.version = bump.to;
     const newDenoJson = JSON.stringify(denoJson, null, 2) + '\n';
 
+    // Collect tree entries for all files to update
+    const treeEntries: Array<{ path: string; mode: string; type: string; sha: string }> = [];
+
+    // Create blob for root deno.json
+    const rootDenoBlob = await this.request<{ sha: string }>(
+      `/repos/${this.owner}/${this.repo}/git/blobs`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ content: newDenoJson, encoding: 'utf-8' }),
+      },
+    );
+    treeEntries.push({ path: 'deno.json', mode: '100644', type: 'blob', sha: rootDenoBlob.sha });
+
     // Get current .pls/versions.json content (or create new)
     // Note: Don't preserve SHA - it becomes stale after squash/rebase merge
-    // SHA is only set from GitHub releases API after merge
     let versionsContent: Record<string, string>;
     try {
       const file = await this.request<{ content: string }>(
@@ -334,53 +351,74 @@ export class ReleasePullRequest {
     } catch {
       versionsContent = {};
     }
+
+    // Set root version
     versionsContent['.'] = bump.to;
+
+    // Update workspace member deno.json files (lockstep versioning)
+    for (const pattern of workspaceMembers) {
+      // Skip glob patterns - only handle direct paths
+      if (pattern.includes('*')) continue;
+
+      const memberPath = pattern.replace(/^\.\//, '');
+
+      try {
+        const file = await this.request<{ content: string }>(
+          `/repos/${this.owner}/${this.repo}/contents/${memberPath}/deno.json?ref=${this.baseBranch}`,
+        );
+        const memberContent = atob(file.content.replace(/\n/g, ''));
+        const memberJson = JSON.parse(memberContent);
+
+        // Update version to match root (lockstep)
+        memberJson.version = bump.to;
+        const newMemberJson = JSON.stringify(memberJson, null, 2) + '\n';
+
+        // Create blob for member deno.json
+        const memberBlob = await this.request<{ sha: string }>(
+          `/repos/${this.owner}/${this.repo}/git/blobs`,
+          {
+            method: 'POST',
+            body: JSON.stringify({ content: newMemberJson, encoding: 'utf-8' }),
+          },
+        );
+        treeEntries.push({
+          path: `${memberPath}/deno.json`,
+          mode: '100644',
+          type: 'blob',
+          sha: memberBlob.sha,
+        });
+
+        // Add to versions manifest
+        versionsContent[memberPath] = bump.to;
+      } catch {
+        // Member doesn't have deno.json, skip
+      }
+    }
+
+    // Create blob for versions.json
     const newVersionsJson = JSON.stringify(versionsContent, null, 2) + '\n';
-
-    // Create blobs for both files
-    const denoBlob = await this.request<{ sha: string }>(
-      `/repos/${this.owner}/${this.repo}/git/blobs`,
-      {
-        method: 'POST',
-        body: JSON.stringify({
-          content: newDenoJson,
-          encoding: 'utf-8',
-        }),
-      },
-    );
-
     const versionsBlob = await this.request<{ sha: string }>(
       `/repos/${this.owner}/${this.repo}/git/blobs`,
       {
         method: 'POST',
-        body: JSON.stringify({
-          content: newVersionsJson,
-          encoding: 'utf-8',
-        }),
+        body: JSON.stringify({ content: newVersionsJson, encoding: 'utf-8' }),
       },
     );
+    treeEntries.push({
+      path: '.pls/versions.json',
+      mode: '100644',
+      type: 'blob',
+      sha: versionsBlob.sha,
+    });
 
-    // Create tree with updated files
+    // Create tree with all updated files
     const tree = await this.request<{ sha: string }>(
       `/repos/${this.owner}/${this.repo}/git/trees`,
       {
         method: 'POST',
         body: JSON.stringify({
           base_tree: baseCommit.tree.sha,
-          tree: [
-            {
-              path: 'deno.json',
-              mode: '100644',
-              type: 'blob',
-              sha: denoBlob.sha,
-            },
-            {
-              path: '.pls/versions.json',
-              mode: '100644',
-              type: 'blob',
-              sha: versionsBlob.sha,
-            },
-          ],
+          tree: treeEntries,
         }),
       },
     );
@@ -494,6 +532,8 @@ ${optionsBlock}
   /**
    * Sync PR branch with the selected version.
    * Resets branch to base, creates fresh commit with new version, force pushes.
+   *
+   * Implements lockstep versioning: all workspace packages get the same version.
    */
   async syncBranch(
     prNumber: number,
@@ -516,21 +556,37 @@ ${optionsBlock}
       `/repos/${this.owner}/${this.repo}/git/commits/${baseSha}`,
     );
 
-    // Get current deno.json content
+    // Get current deno.json content and workspace members
     let denoJsonContent: string;
+    let workspaceMembers: string[] = [];
     try {
       const file = await this.request<{ content: string }>(
         `/repos/${this.owner}/${this.repo}/contents/deno.json?ref=${baseBranch}`,
       );
       denoJsonContent = atob(file.content.replace(/\n/g, ''));
+      const parsed = JSON.parse(denoJsonContent);
+      workspaceMembers = parsed.workspace || [];
     } catch {
       denoJsonContent = '{}';
     }
 
-    // Update version in deno.json
+    // Update version in root deno.json
     const denoJson = JSON.parse(denoJsonContent);
     denoJson.version = selectedVersion;
     const newDenoJson = JSON.stringify(denoJson, null, 2) + '\n';
+
+    // Collect tree entries for all files to update
+    const treeEntries: Array<{ path: string; mode: string; type: string; sha: string }> = [];
+
+    // Create blob for root deno.json
+    const rootDenoBlob = await this.request<{ sha: string }>(
+      `/repos/${this.owner}/${this.repo}/git/blobs`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ content: newDenoJson, encoding: 'utf-8' }),
+      },
+    );
+    treeEntries.push({ path: 'deno.json', mode: '100644', type: 'blob', sha: rootDenoBlob.sha });
 
     // Get/create .pls/versions.json content
     // Note: Don't preserve SHA - it becomes stale after squash/rebase merge
@@ -550,18 +606,52 @@ ${optionsBlock}
     } catch {
       versionsContent = {};
     }
+
+    // Set root version
     versionsContent['.'] = selectedVersion;
+
+    // Update workspace member deno.json files (lockstep versioning)
+    for (const pattern of workspaceMembers) {
+      // Skip glob patterns - only handle direct paths
+      if (pattern.includes('*')) continue;
+
+      const memberPath = pattern.replace(/^\.\//, '');
+
+      try {
+        const file = await this.request<{ content: string }>(
+          `/repos/${this.owner}/${this.repo}/contents/${memberPath}/deno.json?ref=${baseBranch}`,
+        );
+        const memberContent = atob(file.content.replace(/\n/g, ''));
+        const memberJson = JSON.parse(memberContent);
+
+        // Update version to match root (lockstep)
+        memberJson.version = selectedVersion;
+        const newMemberJson = JSON.stringify(memberJson, null, 2) + '\n';
+
+        // Create blob for member deno.json
+        const memberBlob = await this.request<{ sha: string }>(
+          `/repos/${this.owner}/${this.repo}/git/blobs`,
+          {
+            method: 'POST',
+            body: JSON.stringify({ content: newMemberJson, encoding: 'utf-8' }),
+          },
+        );
+        treeEntries.push({
+          path: `${memberPath}/deno.json`,
+          mode: '100644',
+          type: 'blob',
+          sha: memberBlob.sha,
+        });
+
+        // Add to versions manifest
+        versionsContent[memberPath] = selectedVersion;
+      } catch {
+        // Member doesn't have deno.json, skip
+      }
+    }
+
+    // Create blob for versions.json
     const newVersionsJson = JSON.stringify(versionsContent, null, 2) + '\n';
-
-    // Create blobs
-    const denoBlob = await this.request<{ sha: string }>(
-      `/repos/${this.owner}/${this.repo}/git/blobs`,
-      {
-        method: 'POST',
-        body: JSON.stringify({ content: newDenoJson, encoding: 'utf-8' }),
-      },
-    );
-
     const versionsBlob = await this.request<{ sha: string }>(
       `/repos/${this.owner}/${this.repo}/git/blobs`,
       {
@@ -569,18 +659,21 @@ ${optionsBlock}
         body: JSON.stringify({ content: newVersionsJson, encoding: 'utf-8' }),
       },
     );
+    treeEntries.push({
+      path: '.pls/versions.json',
+      mode: '100644',
+      type: 'blob',
+      sha: versionsBlob.sha,
+    });
 
-    // Create tree
+    // Create tree with all updated files
     const tree = await this.request<{ sha: string }>(
       `/repos/${this.owner}/${this.repo}/git/trees`,
       {
         method: 'POST',
         body: JSON.stringify({
           base_tree: baseCommit.tree.sha,
-          tree: [
-            { path: 'deno.json', mode: '100644', type: 'blob', sha: denoBlob.sha },
-            { path: '.pls/versions.json', mode: '100644', type: 'blob', sha: versionsBlob.sha },
-          ],
+          tree: treeEntries,
         }),
       },
     );
