@@ -35,3 +35,9 @@ export {
   updateVersionFile,
   type VersionFileResult,
 } from './version-file.ts';
+export {
+  type ReleaseFilesOptions,
+  stageReleaseFiles,
+  updateReleaseFiles,
+  type UpdateResult,
+} from './release-files.ts';

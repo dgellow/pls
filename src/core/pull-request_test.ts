@@ -1,26 +1,15 @@
 import { assertEquals, assertThrows } from '@std/assert';
 import { ReleasePullRequest } from './pull-request.ts';
 import { PlsError } from '../types.ts';
+import { GitHubBackend } from '../backend/mod.ts';
 
 /**
- * Test helper: Creates a ReleasePullRequest with a mocked request method
- * that tracks all API calls made.
+ * Creates a mock request handler that tracks all API calls.
  */
-function createMockedPR(): {
-  pr: ReleasePullRequest;
-  requests: Array<{ path: string; method: string; body?: unknown }>;
-} {
-  const requests: Array<{ path: string; method: string; body?: unknown }> = [];
-
-  const pr = new ReleasePullRequest({
-    owner: 'test',
-    repo: 'repo',
-    token: 'test-token',
-  });
-
-  // Mock the private request method
-  // deno-lint-ignore no-explicit-any
-  (pr as any).request = (path: string, options: RequestInit = {}): Promise<unknown> => {
+function createMockRequestHandler(
+  requests: Array<{ path: string; method: string; body?: unknown }>,
+): (path: string, options?: RequestInit) => Promise<unknown> {
+  return (path: string, options: RequestInit = {}): Promise<unknown> => {
     const body = options.body ? JSON.parse(options.body as string) : undefined;
     requests.push({
       path,
@@ -53,7 +42,50 @@ function createMockedPR(): {
     if (path.includes('/git/refs/heads/pls-release')) {
       return Promise.resolve({});
     }
+    // POST to /git/refs (without /heads/) is for creating a new ref - make it fail
+    // so updateBranchRef falls through to PATCH
+    if (path.includes('/git/refs') && !path.includes('/heads/') && options.method === 'POST') {
+      return Promise.reject(new Error('Ref already exists'));
+    }
     return Promise.resolve({});
+  };
+}
+
+/**
+ * Test helper: Creates a ReleasePullRequest with mocked API calls.
+ * Mocks both the request method and createBackend to track all calls.
+ */
+function createMockedPR(): {
+  pr: ReleasePullRequest;
+  requests: Array<{ path: string; method: string; body?: unknown }>;
+} {
+  const requests: Array<{ path: string; method: string; body?: unknown }> = [];
+  const mockRequest = createMockRequestHandler(requests);
+
+  const pr = new ReleasePullRequest({
+    owner: 'test',
+    repo: 'repo',
+    token: 'test-token',
+  });
+
+  // Mock the private request method (for methods that use it directly)
+  // deno-lint-ignore no-explicit-any
+  (pr as any).request = mockRequest;
+
+  // Mock createBackend to return a backend with mocked request
+  // deno-lint-ignore no-explicit-any
+  (pr as any).createBackend = (): GitHubBackend => {
+    const backend = new GitHubBackend({
+      owner: 'test',
+      repo: 'repo',
+      token: 'test-token',
+      baseBranch: 'main',
+      targetBranch: 'pls-release',
+      deferBranchUpdate: true,
+    });
+    // deno-lint-ignore no-explicit-any
+    (backend as any).request = mockRequest;
+    return backend;
   };
 
   return { pr, requests };

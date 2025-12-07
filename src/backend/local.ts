@@ -25,8 +25,9 @@ export class LocalBackend implements CommitBackend {
     }
   }
 
-  async write(path: string, content: string): Promise<void> {
+  write(path: string, content: string): Promise<void> {
     this.pendingWrites.set(path, content);
+    return Promise.resolve();
   }
 
   async exists(path: string): Promise<boolean> {

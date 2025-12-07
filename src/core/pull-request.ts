@@ -1,6 +1,7 @@
 import type { VersionBump } from '../types.ts';
 import { PlsError } from '../types.ts';
-import { generateReleaseCommitMessage } from './release-metadata.ts';
+import { GitHubBackend } from '../backend/mod.ts';
+import { updateReleaseFiles } from './release-files.ts';
 import {
   generateOptions,
   generateOptionsBlock,
@@ -9,58 +10,6 @@ import {
   type VersionOption,
 } from './pr-options.ts';
 import { type DebugEntry, generateDebugBlock, parseDebugBlock } from './pr-debug.ts';
-
-/**
- * Version entry that preserves versionFile but strips SHA.
- */
-type VersionEntry = string | { version: string; versionFile?: string };
-
-/**
- * Parse versions.json content, preserving versionFile but stripping SHA.
- */
-function parseVersionsJson(content: string): Record<string, VersionEntry> {
-  const parsed = JSON.parse(content);
-  const result: Record<string, VersionEntry> = {};
-
-  for (const [key, value] of Object.entries(parsed)) {
-    if (typeof value === 'object' && value !== null) {
-      const entry = value as { version: string; sha?: string; versionFile?: string };
-      if (entry.versionFile) {
-        result[key] = { version: entry.version, versionFile: entry.versionFile };
-      } else {
-        result[key] = entry.version;
-      }
-    } else {
-      result[key] = value as string;
-    }
-  }
-
-  return result;
-}
-
-/**
- * Update version in versions content, preserving versionFile if present.
- */
-function updateVersionEntry(
-  versions: Record<string, VersionEntry>,
-  path: string,
-  newVersion: string,
-): void {
-  const entry = versions[path];
-  if (typeof entry === 'object' && entry.versionFile) {
-    versions[path] = { version: newVersion, versionFile: entry.versionFile };
-  } else {
-    versions[path] = newVersion;
-  }
-}
-
-/**
- * Get versionFile path from versions content.
- */
-function getVersionFilePath(versions: Record<string, VersionEntry>): string | null {
-  const entry = versions['.'];
-  return typeof entry === 'object' ? entry.versionFile || null : null;
-}
 
 export interface PullRequestOptions {
   owner: string;
@@ -88,7 +37,6 @@ export class ReleasePullRequest {
   private repo: string;
   private token: string;
   private baseBranch: string;
-  private baseUrl = 'https://api.github.com';
 
   constructor(options: PullRequestOptions) {
     this.owner = options.owner;
@@ -104,30 +52,27 @@ export class ReleasePullRequest {
     }
   }
 
-  private async request<T>(
-    path: string,
-    options: RequestInit = {},
-  ): Promise<T> {
-    const response = await fetch(`${this.baseUrl}${path}`, {
-      ...options,
-      headers: {
-        'Accept': 'application/vnd.github.v3+json',
-        'Authorization': `Bearer ${this.token}`,
-        'User-Agent': 'pls-release-tool',
-        ...options.headers,
-      },
+  /**
+   * Create a GitHubBackend configured for the release branch.
+   * Uses deferBranchUpdate so we can control when the branch is updated.
+   */
+  private createBackend(targetBranch: string = this.releaseBranch): GitHubBackend {
+    return new GitHubBackend({
+      owner: this.owner,
+      repo: this.repo,
+      token: this.token,
+      baseBranch: this.baseBranch,
+      targetBranch,
+      deferBranchUpdate: true,
     });
+  }
 
-    if (!response.ok) {
-      const error = await response.text();
-      throw new PlsError(
-        `GitHub API error: ${response.status} ${response.statusText}`,
-        'GITHUB_API_ERROR',
-        { status: response.status, error },
-      );
-    }
-
-    return response.json();
+  /**
+   * Make a GitHub API request using a temporary backend.
+   */
+  private request<T>(path: string, options: RequestInit = {}): Promise<T> {
+    const backend = this.createBackend();
+    return backend.request<T>(path, options);
   }
 
   private get releaseBranch(): string {
@@ -251,16 +196,14 @@ export class ReleasePullRequest {
     };
   }
 
-  private async createBranch(bump: VersionBump, changelog: string): Promise<void> {
-    // Get base branch SHA
-    const baseRef = await this.request<{ object: { sha: string } }>(
-      `/repos/${this.owner}/${this.repo}/git/ref/heads/${this.baseBranch}`,
-    );
-    const baseSha = baseRef.object.sha;
+  private async createBranch(bump: VersionBump, _changelog: string): Promise<void> {
+    const backend = this.createBackend();
+    await backend.ensureBase();
+    const baseSha = backend.getBaseSha()!;
 
-    // Try to create branch, or update if exists
+    // Create or reset branch to base SHA
     try {
-      await this.request(
+      await backend.request(
         `/repos/${this.owner}/${this.repo}/git/refs`,
         {
           method: 'POST',
@@ -272,7 +215,7 @@ export class ReleasePullRequest {
       );
     } catch {
       // Branch exists, update it
-      await this.request(
+      await backend.request(
         `/repos/${this.owner}/${this.repo}/git/refs/heads/${this.releaseBranch}`,
         {
           method: 'PATCH',
@@ -281,243 +224,29 @@ export class ReleasePullRequest {
       );
     }
 
-    // Create commit with version changes
-    await this.createReleaseCommit(bump, changelog, baseSha);
+    // Create commit with version changes and update branch
+    await updateReleaseFiles(backend, {
+      version: bump.to,
+      from: bump.from,
+      type: bump.type,
+    });
+    await backend.updateBranchRef(backend.getLastCommitSha()!);
   }
 
-  private async updateBranch(bump: VersionBump, changelog: string): Promise<void> {
-    // Get base branch SHA
-    const baseRef = await this.request<{ object: { sha: string } }>(
-      `/repos/${this.owner}/${this.repo}/git/ref/heads/${this.baseBranch}`,
-    );
-    const baseSha = baseRef.object.sha;
+  private async updateBranch(bump: VersionBump, _changelog: string): Promise<void> {
+    const backend = this.createBackend();
 
     // Create new commit first, THEN update branch ref atomically
     // DO NOT reset branch to base first - that causes GitHub to auto-close
     // the PR (0 commits = closed) before the new commit is pushed
-    const commitSha = await this.createReleaseCommitAndGetSha(bump, changelog, baseSha);
-
-    // Now update branch ref to point to the new commit
-    await this.request(
-      `/repos/${this.owner}/${this.repo}/git/refs/heads/${this.releaseBranch}`,
-      {
-        method: 'PATCH',
-        body: JSON.stringify({ sha: commitSha, force: true }),
-      },
-    );
-  }
-
-  /**
-   * Create release commit and update branch ref.
-   * Used by createBranch for initial PR creation.
-   */
-  private async createReleaseCommit(
-    bump: VersionBump,
-    changelog: string,
-    baseSha: string,
-  ): Promise<void> {
-    const commitSha = await this.createReleaseCommitAndGetSha(bump, changelog, baseSha);
-
-    // Update branch ref
-    await this.request(
-      `/repos/${this.owner}/${this.repo}/git/refs/heads/${this.releaseBranch}`,
-      {
-        method: 'PATCH',
-        body: JSON.stringify({ sha: commitSha }),
-      },
-    );
-  }
-
-  /**
-   * Create release commit and return its SHA without updating branch ref.
-   * This allows the caller to update the branch ref atomically, avoiding
-   * the race condition where resetting the branch first causes GitHub
-   * to auto-close the PR (0 commits = closed).
-   *
-   * Implements lockstep versioning: all workspace packages get the same version.
-   */
-  private async createReleaseCommitAndGetSha(
-    bump: VersionBump,
-    _changelog: string,
-    baseSha: string,
-  ): Promise<string> {
-    // Generate structured commit message with embedded metadata
-    const commitMessage = generateReleaseCommitMessage({
+    await updateReleaseFiles(backend, {
       version: bump.to,
       from: bump.from,
       type: bump.type,
     });
 
-    // Get base tree
-    const baseCommit = await this.request<{ tree: { sha: string } }>(
-      `/repos/${this.owner}/${this.repo}/git/commits/${baseSha}`,
-    );
-
-    // Get current deno.json content
-    let denoJsonContent: string;
-    let workspaceMembers: string[] = [];
-    try {
-      const file = await this.request<{ content: string }>(
-        `/repos/${this.owner}/${this.repo}/contents/deno.json?ref=${this.baseBranch}`,
-      );
-      denoJsonContent = atob(file.content.replace(/\n/g, ''));
-      const parsed = JSON.parse(denoJsonContent);
-      workspaceMembers = parsed.workspace || [];
-    } catch {
-      denoJsonContent = '{}';
-    }
-
-    // Update version in root deno.json
-    const denoJson = JSON.parse(denoJsonContent);
-    denoJson.version = bump.to;
-    const newDenoJson = JSON.stringify(denoJson, null, 2) + '\n';
-
-    // Collect tree entries for all files to update
-    const treeEntries: Array<{ path: string; mode: string; type: string; sha: string }> = [];
-
-    // Create blob for root deno.json
-    const rootDenoBlob = await this.request<{ sha: string }>(
-      `/repos/${this.owner}/${this.repo}/git/blobs`,
-      {
-        method: 'POST',
-        body: JSON.stringify({ content: newDenoJson, encoding: 'utf-8' }),
-      },
-    );
-    treeEntries.push({ path: 'deno.json', mode: '100644', type: 'blob', sha: rootDenoBlob.sha });
-
-    // Get current .pls/versions.json content (or create new)
-    // Preserves versionFile but strips SHA (becomes stale after merge)
-    let versionsContent: Record<string, VersionEntry>;
-    try {
-      const file = await this.request<{ content: string }>(
-        `/repos/${this.owner}/${this.repo}/contents/.pls/versions.json?ref=${this.baseBranch}`,
-      );
-      versionsContent = parseVersionsJson(atob(file.content.replace(/\n/g, '')));
-    } catch {
-      versionsContent = {};
-    }
-
-    // Set root version (preserve versionFile if present)
-    updateVersionEntry(versionsContent, '.', bump.to);
-
-    // Update workspace member deno.json files (lockstep versioning)
-    for (const pattern of workspaceMembers) {
-      // Skip glob patterns - only handle direct paths
-      if (pattern.includes('*')) continue;
-
-      const memberPath = pattern.replace(/^\.\//, '');
-
-      try {
-        const file = await this.request<{ content: string }>(
-          `/repos/${this.owner}/${this.repo}/contents/${memberPath}/deno.json?ref=${this.baseBranch}`,
-        );
-        const memberContent = atob(file.content.replace(/\n/g, ''));
-        const memberJson = JSON.parse(memberContent);
-
-        // Update version to match root (lockstep)
-        memberJson.version = bump.to;
-        const newMemberJson = JSON.stringify(memberJson, null, 2) + '\n';
-
-        // Create blob for member deno.json
-        const memberBlob = await this.request<{ sha: string }>(
-          `/repos/${this.owner}/${this.repo}/git/blobs`,
-          {
-            method: 'POST',
-            body: JSON.stringify({ content: newMemberJson, encoding: 'utf-8' }),
-          },
-        );
-        treeEntries.push({
-          path: `${memberPath}/deno.json`,
-          mode: '100644',
-          type: 'blob',
-          sha: memberBlob.sha,
-        });
-
-        // Add to versions manifest (preserve versionFile if present)
-        updateVersionEntry(versionsContent, memberPath, bump.to);
-      } catch {
-        // Member doesn't have deno.json, skip
-      }
-    }
-
-    // Check for version file in versions.json (already loaded above) and update it
-    const versionFilePath = getVersionFilePath(versionsContent);
-
-    if (versionFilePath) {
-      try {
-        const versionFile = await this.request<{ content: string }>(
-          `/repos/${this.owner}/${this.repo}/contents/${versionFilePath}?ref=${this.baseBranch}`,
-        );
-        const versionFileContent = atob(versionFile.content.replace(/\n/g, ''));
-
-        // Update VERSION constant (handles both single and double quotes)
-        const updatedVersionFile = versionFileContent.replace(
-          /^export const VERSION = ["'][^"']+["'];?$/m,
-          `export const VERSION = '${bump.to}';`,
-        );
-
-        if (updatedVersionFile !== versionFileContent) {
-          const versionFileBlob = await this.request<{ sha: string }>(
-            `/repos/${this.owner}/${this.repo}/git/blobs`,
-            {
-              method: 'POST',
-              body: JSON.stringify({ content: updatedVersionFile, encoding: 'utf-8' }),
-            },
-          );
-          treeEntries.push({
-            path: versionFilePath,
-            mode: '100644',
-            type: 'blob',
-            sha: versionFileBlob.sha,
-          });
-        }
-      } catch {
-        // Version file doesn't exist or couldn't be read, skip
-      }
-    }
-
-    // Create blob for versions.json
-    const newVersionsJson = JSON.stringify(versionsContent, null, 2) + '\n';
-    const versionsBlob = await this.request<{ sha: string }>(
-      `/repos/${this.owner}/${this.repo}/git/blobs`,
-      {
-        method: 'POST',
-        body: JSON.stringify({ content: newVersionsJson, encoding: 'utf-8' }),
-      },
-    );
-    treeEntries.push({
-      path: '.pls/versions.json',
-      mode: '100644',
-      type: 'blob',
-      sha: versionsBlob.sha,
-    });
-
-    // Create tree with all updated files
-    const tree = await this.request<{ sha: string }>(
-      `/repos/${this.owner}/${this.repo}/git/trees`,
-      {
-        method: 'POST',
-        body: JSON.stringify({
-          base_tree: baseCommit.tree.sha,
-          tree: treeEntries,
-        }),
-      },
-    );
-
-    // Create commit with structured metadata
-    const commit = await this.request<{ sha: string }>(
-      `/repos/${this.owner}/${this.repo}/git/commits`,
-      {
-        method: 'POST',
-        body: JSON.stringify({
-          message: commitMessage,
-          tree: tree.sha,
-          parents: [baseSha],
-        }),
-      },
-    );
-
-    return commit.sha;
+    // Force update branch ref to point to the new commit
+    await backend.updateBranchRef(backend.getLastCommitSha()!, true);
   }
 
   private generatePRBody(
@@ -612,9 +341,7 @@ ${optionsBlock}
 
   /**
    * Sync PR branch with the selected version.
-   * Resets branch to base, creates fresh commit with new version, force pushes.
-   *
-   * Implements lockstep versioning: all workspace packages get the same version.
+   * Uses the unified release-files module for all file updates.
    */
   async syncBranch(
     prNumber: number,
@@ -624,161 +351,26 @@ ${optionsBlock}
   ): Promise<void> {
     const pr = await this.getPR(prNumber);
     const branchName = pr.head.ref;
-    const baseBranch = pr.base.ref;
 
-    // Get base branch SHA
-    const baseRef = await this.request<{ object: { sha: string } }>(
-      `/repos/${this.owner}/${this.repo}/git/ref/heads/${baseBranch}`,
-    );
-    const baseSha = baseRef.object.sha;
-
-    // Get base tree
-    const baseCommit = await this.request<{ tree: { sha: string } }>(
-      `/repos/${this.owner}/${this.repo}/git/commits/${baseSha}`,
-    );
-
-    // Get current deno.json content and workspace members
-    let denoJsonContent: string;
-    let workspaceMembers: string[] = [];
-    try {
-      const file = await this.request<{ content: string }>(
-        `/repos/${this.owner}/${this.repo}/contents/deno.json?ref=${baseBranch}`,
-      );
-      denoJsonContent = atob(file.content.replace(/\n/g, ''));
-      const parsed = JSON.parse(denoJsonContent);
-      workspaceMembers = parsed.workspace || [];
-    } catch {
-      denoJsonContent = '{}';
-    }
-
-    // Update version in root deno.json
-    const denoJson = JSON.parse(denoJsonContent);
-    denoJson.version = selectedVersion;
-    const newDenoJson = JSON.stringify(denoJson, null, 2) + '\n';
-
-    // Collect tree entries for all files to update
-    const treeEntries: Array<{ path: string; mode: string; type: string; sha: string }> = [];
-
-    // Create blob for root deno.json
-    const rootDenoBlob = await this.request<{ sha: string }>(
-      `/repos/${this.owner}/${this.repo}/git/blobs`,
-      {
-        method: 'POST',
-        body: JSON.stringify({ content: newDenoJson, encoding: 'utf-8' }),
-      },
-    );
-    treeEntries.push({ path: 'deno.json', mode: '100644', type: 'blob', sha: rootDenoBlob.sha });
-
-    // Get/create .pls/versions.json content
-    // Preserves versionFile but strips SHA (becomes stale after merge)
-    let versionsContent: Record<string, VersionEntry>;
-    try {
-      const file = await this.request<{ content: string }>(
-        `/repos/${this.owner}/${this.repo}/contents/.pls/versions.json?ref=${baseBranch}`,
-      );
-      versionsContent = parseVersionsJson(atob(file.content.replace(/\n/g, '')));
-    } catch {
-      versionsContent = {};
-    }
-
-    // Set root version (preserve versionFile if present)
-    updateVersionEntry(versionsContent, '.', selectedVersion);
-
-    // Update workspace member deno.json files (lockstep versioning)
-    for (const pattern of workspaceMembers) {
-      // Skip glob patterns - only handle direct paths
-      if (pattern.includes('*')) continue;
-
-      const memberPath = pattern.replace(/^\.\//, '');
-
-      try {
-        const file = await this.request<{ content: string }>(
-          `/repos/${this.owner}/${this.repo}/contents/${memberPath}/deno.json?ref=${baseBranch}`,
-        );
-        const memberContent = atob(file.content.replace(/\n/g, ''));
-        const memberJson = JSON.parse(memberContent);
-
-        // Update version to match root (lockstep)
-        memberJson.version = selectedVersion;
-        const newMemberJson = JSON.stringify(memberJson, null, 2) + '\n';
-
-        // Create blob for member deno.json
-        const memberBlob = await this.request<{ sha: string }>(
-          `/repos/${this.owner}/${this.repo}/git/blobs`,
-          {
-            method: 'POST',
-            body: JSON.stringify({ content: newMemberJson, encoding: 'utf-8' }),
-          },
-        );
-        treeEntries.push({
-          path: `${memberPath}/deno.json`,
-          mode: '100644',
-          type: 'blob',
-          sha: memberBlob.sha,
-        });
-
-        // Add to versions manifest (preserve versionFile if present)
-        updateVersionEntry(versionsContent, memberPath, selectedVersion);
-      } catch {
-        // Member doesn't have deno.json, skip
-      }
-    }
-
-    // Create blob for versions.json
-    const newVersionsJson = JSON.stringify(versionsContent, null, 2) + '\n';
-    const versionsBlob = await this.request<{ sha: string }>(
-      `/repos/${this.owner}/${this.repo}/git/blobs`,
-      {
-        method: 'POST',
-        body: JSON.stringify({ content: newVersionsJson, encoding: 'utf-8' }),
-      },
-    );
-    treeEntries.push({
-      path: '.pls/versions.json',
-      mode: '100644',
-      type: 'blob',
-      sha: versionsBlob.sha,
+    // Create backend targeting the PR branch
+    const backend = new GitHubBackend({
+      owner: this.owner,
+      repo: this.repo,
+      token: this.token,
+      baseBranch: pr.base.ref,
+      targetBranch: branchName,
+      deferBranchUpdate: true,
     });
 
-    // Create tree with all updated files
-    const tree = await this.request<{ sha: string }>(
-      `/repos/${this.owner}/${this.repo}/git/trees`,
-      {
-        method: 'POST',
-        body: JSON.stringify({
-          base_tree: baseCommit.tree.sha,
-          tree: treeEntries,
-        }),
-      },
-    );
-
-    // Create commit
-    const commitMessage = generateReleaseCommitMessage({
+    // Use unified file update logic
+    await updateReleaseFiles(backend, {
       version: selectedVersion,
       from: fromVersion,
       type: bumpType,
     });
 
-    const commit = await this.request<{ sha: string }>(
-      `/repos/${this.owner}/${this.repo}/git/commits`,
-      {
-        method: 'POST',
-        body: JSON.stringify({
-          message: commitMessage,
-          tree: tree.sha,
-          parents: [baseSha],
-        }),
-      },
-    );
-
-    // Force update branch ref
-    await this.request(
-      `/repos/${this.owner}/${this.repo}/git/refs/heads/${branchName}`,
-      {
-        method: 'PATCH',
-        body: JSON.stringify({ sha: commit.sha, force: true }),
-      },
-    );
+    // Force update branch ref to point to the new commit
+    await backend.updateBranchRef(backend.getLastCommitSha()!, true);
   }
 
   /**

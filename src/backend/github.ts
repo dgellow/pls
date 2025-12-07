@@ -11,6 +11,8 @@ export interface GitHubBackendOptions {
   token: string;
   baseBranch: string;
   targetBranch?: string;
+  /** If true, don't update branch ref on commit (caller will do it) */
+  deferBranchUpdate?: boolean;
 }
 
 interface TreeEntry {
@@ -25,6 +27,7 @@ export class GitHubBackend implements CommitBackend {
   private pendingWrites: Map<string, string> = new Map();
   private baseSha: string | null = null;
   private baseTreeSha: string | null = null;
+  private lastCommitSha: string | null = null;
 
   constructor(private options: GitHubBackendOptions) {
     if (!options.token) {
@@ -35,23 +38,23 @@ export class GitHubBackend implements CommitBackend {
     }
   }
 
-  private get owner(): string {
+  get owner(): string {
     return this.options.owner;
   }
 
-  private get repo(): string {
+  get repo(): string {
     return this.options.repo;
   }
 
-  private get baseBranch(): string {
+  get baseBranch(): string {
     return this.options.baseBranch;
   }
 
-  private get targetBranch(): string {
+  get targetBranch(): string {
     return this.options.targetBranch || this.options.baseBranch;
   }
 
-  private async request<T>(path: string, options: RequestInit = {}): Promise<T> {
+  async request<T>(path: string, options: RequestInit = {}): Promise<T> {
     const response = await fetch(`${this.baseUrl}${path}`, {
       ...options,
       headers: {
@@ -74,24 +77,29 @@ export class GitHubBackend implements CommitBackend {
     return response.json();
   }
 
-  private async ensureBase(): Promise<void> {
+  async ensureBase(): Promise<void> {
     if (this.baseSha) return;
 
-    // Get base branch SHA
     const baseRef = await this.request<{ object: { sha: string } }>(
       `/repos/${this.owner}/${this.repo}/git/ref/heads/${this.baseBranch}`,
     );
     this.baseSha = baseRef.object.sha;
 
-    // Get base tree
     const baseCommit = await this.request<{ tree: { sha: string } }>(
       `/repos/${this.owner}/${this.repo}/git/commits/${this.baseSha}`,
     );
     this.baseTreeSha = baseCommit.tree.sha;
   }
 
+  getBaseSha(): string | null {
+    return this.baseSha;
+  }
+
+  getLastCommitSha(): string | null {
+    return this.lastCommitSha;
+  }
+
   async read(path: string): Promise<string | null> {
-    // Check pending writes first
     if (this.pendingWrites.has(path)) {
       return this.pendingWrites.get(path)!;
     }
@@ -106,8 +114,9 @@ export class GitHubBackend implements CommitBackend {
     }
   }
 
-  async write(path: string, content: string): Promise<void> {
+  write(path: string, content: string): Promise<void> {
     this.pendingWrites.set(path, content);
+    return Promise.resolve();
   }
 
   async exists(path: string): Promise<boolean> {
@@ -125,22 +134,19 @@ export class GitHubBackend implements CommitBackend {
     }
   }
 
-  async glob(_pattern: string): Promise<string[]> {
-    // GitHub API doesn't support glob directly
-    // For now, return empty - callers should use specific paths
-    // TODO: Implement tree traversal if needed
-    return [];
+  glob(_pattern: string): Promise<string[]> {
+    return Promise.resolve([]);
   }
 
   /**
    * Create blobs for pending writes and commit them.
+   * Returns commit SHA.
    */
   async commit(message: string): Promise<string> {
     await this.ensureBase();
 
     const treeEntries: TreeEntry[] = [];
 
-    // Create blobs for all pending writes
     for (const [path, content] of this.pendingWrites) {
       const blob = await this.request<{ sha: string }>(
         `/repos/${this.owner}/${this.repo}/git/blobs`,
@@ -157,10 +163,8 @@ export class GitHubBackend implements CommitBackend {
       });
     }
 
-    // Clear pending writes
     this.pendingWrites.clear();
 
-    // Create tree
     const tree = await this.request<{ sha: string }>(
       `/repos/${this.owner}/${this.repo}/git/trees`,
       {
@@ -172,7 +176,6 @@ export class GitHubBackend implements CommitBackend {
       },
     );
 
-    // Create commit
     const commit = await this.request<{ sha: string }>(
       `/repos/${this.owner}/${this.repo}/git/commits`,
       {
@@ -185,27 +188,35 @@ export class GitHubBackend implements CommitBackend {
       },
     );
 
-    // Update target branch ref
+    this.lastCommitSha = commit.sha;
+
+    if (!this.options.deferBranchUpdate) {
+      await this.updateBranchRef(commit.sha);
+    }
+
+    return commit.sha;
+  }
+
+  /**
+   * Update target branch to point to the given commit SHA.
+   */
+  async updateBranchRef(sha: string, force = true): Promise<void> {
     try {
-      // Try to create branch first
       await this.request(`/repos/${this.owner}/${this.repo}/git/refs`, {
         method: 'POST',
         body: JSON.stringify({
           ref: `refs/heads/${this.targetBranch}`,
-          sha: commit.sha,
+          sha,
         }),
       });
     } catch {
-      // Branch exists, update it
       await this.request(
         `/repos/${this.owner}/${this.repo}/git/refs/heads/${this.targetBranch}`,
         {
           method: 'PATCH',
-          body: JSON.stringify({ sha: commit.sha, force: true }),
+          body: JSON.stringify({ sha, force }),
         },
       );
     }
-
-    return commit.sha;
   }
 }
