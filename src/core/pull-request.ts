@@ -10,6 +10,58 @@ import {
 } from './pr-options.ts';
 import { type DebugEntry, generateDebugBlock, parseDebugBlock } from './pr-debug.ts';
 
+/**
+ * Version entry that preserves versionFile but strips SHA.
+ */
+type VersionEntry = string | { version: string; versionFile?: string };
+
+/**
+ * Parse versions.json content, preserving versionFile but stripping SHA.
+ */
+function parseVersionsJson(content: string): Record<string, VersionEntry> {
+  const parsed = JSON.parse(content);
+  const result: Record<string, VersionEntry> = {};
+
+  for (const [key, value] of Object.entries(parsed)) {
+    if (typeof value === 'object' && value !== null) {
+      const entry = value as { version: string; sha?: string; versionFile?: string };
+      if (entry.versionFile) {
+        result[key] = { version: entry.version, versionFile: entry.versionFile };
+      } else {
+        result[key] = entry.version;
+      }
+    } else {
+      result[key] = value as string;
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Update version in versions content, preserving versionFile if present.
+ */
+function updateVersionEntry(
+  versions: Record<string, VersionEntry>,
+  path: string,
+  newVersion: string,
+): void {
+  const entry = versions[path];
+  if (typeof entry === 'object' && entry.versionFile) {
+    versions[path] = { version: newVersion, versionFile: entry.versionFile };
+  } else {
+    versions[path] = newVersion;
+  }
+}
+
+/**
+ * Get versionFile path from versions content.
+ */
+function getVersionFilePath(versions: Record<string, VersionEntry>): string | null {
+  const entry = versions['.'];
+  return typeof entry === 'object' ? entry.versionFile || null : null;
+}
+
 export interface PullRequestOptions {
   owner: string;
   repo: string;
@@ -334,26 +386,19 @@ export class ReleasePullRequest {
     treeEntries.push({ path: 'deno.json', mode: '100644', type: 'blob', sha: rootDenoBlob.sha });
 
     // Get current .pls/versions.json content (or create new)
-    // Note: Don't preserve SHA - it becomes stale after squash/rebase merge
-    let versionsContent: Record<string, string>;
+    // Preserves versionFile but strips SHA (becomes stale after merge)
+    let versionsContent: Record<string, VersionEntry>;
     try {
       const file = await this.request<{ content: string }>(
         `/repos/${this.owner}/${this.repo}/contents/.pls/versions.json?ref=${this.baseBranch}`,
       );
-      const parsed = JSON.parse(atob(file.content.replace(/\n/g, '')));
-      // Normalize to version-only format (strip any existing SHAs)
-      versionsContent = {};
-      for (const [key, value] of Object.entries(parsed)) {
-        versionsContent[key] = typeof value === 'object' && value !== null
-          ? (value as { version: string }).version
-          : value as string;
-      }
+      versionsContent = parseVersionsJson(atob(file.content.replace(/\n/g, '')));
     } catch {
       versionsContent = {};
     }
 
-    // Set root version
-    versionsContent['.'] = bump.to;
+    // Set root version (preserve versionFile if present)
+    updateVersionEntry(versionsContent, '.', bump.to);
 
     // Update workspace member deno.json files (lockstep versioning)
     for (const pattern of workspaceMembers) {
@@ -388,27 +433,15 @@ export class ReleasePullRequest {
           sha: memberBlob.sha,
         });
 
-        // Add to versions manifest
-        versionsContent[memberPath] = bump.to;
+        // Add to versions manifest (preserve versionFile if present)
+        updateVersionEntry(versionsContent, memberPath, bump.to);
       } catch {
         // Member doesn't have deno.json, skip
       }
     }
 
-    // Check for version file in versions.json and update it
-    let versionFilePath: string | null = null;
-    try {
-      const versionsFile = await this.request<{ content: string }>(
-        `/repos/${this.owner}/${this.repo}/contents/.pls/versions.json?ref=${this.baseBranch}`,
-      );
-      const parsedVersions = JSON.parse(atob(versionsFile.content.replace(/\n/g, '')));
-      const rootEntry = parsedVersions['.'];
-      if (rootEntry && typeof rootEntry === 'object' && rootEntry.versionFile) {
-        versionFilePath = rootEntry.versionFile;
-      }
-    } catch {
-      // No versions.json or no versionFile configured
-    }
+    // Check for version file in versions.json (already loaded above) and update it
+    const versionFilePath = getVersionFilePath(versionsContent);
 
     if (versionFilePath) {
       try {
@@ -637,26 +670,19 @@ ${optionsBlock}
     treeEntries.push({ path: 'deno.json', mode: '100644', type: 'blob', sha: rootDenoBlob.sha });
 
     // Get/create .pls/versions.json content
-    // Note: Don't preserve SHA - it becomes stale after squash/rebase merge
-    let versionsContent: Record<string, string>;
+    // Preserves versionFile but strips SHA (becomes stale after merge)
+    let versionsContent: Record<string, VersionEntry>;
     try {
       const file = await this.request<{ content: string }>(
         `/repos/${this.owner}/${this.repo}/contents/.pls/versions.json?ref=${baseBranch}`,
       );
-      const parsed = JSON.parse(atob(file.content.replace(/\n/g, '')));
-      // Normalize to version-only format (strip any existing SHAs)
-      versionsContent = {};
-      for (const [key, value] of Object.entries(parsed)) {
-        versionsContent[key] = typeof value === 'object' && value !== null
-          ? (value as { version: string }).version
-          : value as string;
-      }
+      versionsContent = parseVersionsJson(atob(file.content.replace(/\n/g, '')));
     } catch {
       versionsContent = {};
     }
 
-    // Set root version
-    versionsContent['.'] = selectedVersion;
+    // Set root version (preserve versionFile if present)
+    updateVersionEntry(versionsContent, '.', selectedVersion);
 
     // Update workspace member deno.json files (lockstep versioning)
     for (const pattern of workspaceMembers) {
@@ -691,8 +717,8 @@ ${optionsBlock}
           sha: memberBlob.sha,
         });
 
-        // Add to versions manifest
-        versionsContent[memberPath] = selectedVersion;
+        // Add to versions manifest (preserve versionFile if present)
+        updateVersionEntry(versionsContent, memberPath, selectedVersion);
       } catch {
         // Member doesn't have deno.json, skip
       }
