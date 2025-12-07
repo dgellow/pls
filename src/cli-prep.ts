@@ -28,6 +28,7 @@ ${bold('USAGE:')}
 
 ${bold('OPTIONS:')}
   --execute            Actually create/update (default is dry-run)
+  --direct             Commit directly to base branch (no PR) when initializing manifest
   --github-pr <num>    Target a specific GitHub PR (for webhook triggers)
   --base <branch>      Base branch (default: main)
   --owner <owner>      GitHub repository owner (auto-detected from git remote)
@@ -37,6 +38,12 @@ ${bold('OPTIONS:')}
 ${bold('DESCRIPTION:')}
   Creates or updates a release PR. If a PR exists, preserves the user's
   version selection from the PR description.
+
+  If no .pls/versions.json exists, pls will automatically create one by
+  extracting versions from your existing deno.json/package.json files:
+  - By default: Creates a setup PR with .pls/versions.json
+  - With --direct: Commits directly to the base branch (requires push access)
+  - Handles workspaces: extracts versions from all workspace members
 
   With --github-pr=N: Targets a specific PR (used by webhook triggers).
   Will no-op if the PR's selection matches its current version.
@@ -48,6 +55,9 @@ ${bold('EXAMPLES:')}
   # Create/update release PR
   pls prep --execute
 
+  # Initialize manifest directly on main (first-time setup)
+  pls prep --execute --direct
+
   # Sync a specific PR (triggered by PR edit webhook)
   pls prep --github-pr=123 --execute
 `);
@@ -55,7 +65,7 @@ ${bold('EXAMPLES:')}
 
 export async function handlePrep(args: string[]): Promise<void> {
   const parsed = parseArgs(args, {
-    boolean: ['help', 'execute'],
+    boolean: ['help', 'execute', 'direct'],
     string: ['base', 'owner', 'repo', 'token', 'github-pr'],
     default: {
       base: 'main',
@@ -103,6 +113,7 @@ export async function handlePrep(args: string[]): Promise<void> {
       parsed.token,
       !parsed.execute,
       githubPrNumber,
+      parsed.direct,
     );
   } catch (error) {
     if (error instanceof PlsError) {
@@ -120,6 +131,7 @@ export async function handlePrep(args: string[]): Promise<void> {
 /**
  * Handle create/update mode: create a new PR or update an existing one.
  * When targetPrNumber is provided, verify it matches and check for no-op.
+ * If no manifest exists, creates one (via PR or direct commit based on --direct flag).
  */
 async function handleCreateOrUpdate(
   detector: Detector,
@@ -129,9 +141,43 @@ async function handleCreateOrUpdate(
   token: string | undefined,
   isDryRun: boolean,
   targetPrNumber?: number | null,
+  directCommit?: boolean,
 ): Promise<void> {
   // Debug info collection
   const debugDetails: Record<string, string> = {};
+
+  // Create PR client early to check for manifest
+  const prClient = new ReleasePullRequest({
+    owner,
+    repo,
+    token,
+    baseBranch,
+  });
+
+  // Check if .pls/versions.json exists; if not, create it by scanning existing manifests
+  const hasVersionsManifestRemote = await prClient.versionsManifestExists();
+  if (!hasVersionsManifestRemote) {
+    console.log(yellow(`No .pls/versions.json found on ${baseBranch}`));
+    console.log(`\nInitializing versions manifest from existing project files...`);
+
+    if (isDryRun) {
+      console.log(yellow('\nDRY RUN (use --execute to create manifest)\n'));
+    }
+
+    const result = await prClient.createVersionsManifest(directCommit ?? false, isDryRun);
+
+    if (!isDryRun) {
+      if (result.direct) {
+        console.log(
+          green(`\nVersions manifest created. Run 'pls prep' again to create a release PR.`),
+        );
+      } else if (result.url) {
+        console.log(green(`\nSetup PR ready: ${result.url}`));
+        console.log(`Merge it, then run 'pls prep' to create a release PR.`);
+      }
+    }
+    return;
+  }
 
   // Get current version and SHA - priority: .pls/versions.json > GitHub releases > deno.json
   let currentVersion: string | null = null;
@@ -235,20 +281,12 @@ async function handleCreateOrUpdate(
   const releaseManager = new ReleaseManager(storage);
   const changelog = releaseManager.generateReleaseNotes(bump);
 
-  // Create PR client
-  const pr = new ReleasePullRequest({
-    owner,
-    repo,
-    token,
-    baseBranch,
-  });
-
   // If targeting a specific PR, verify it exists and check for no-op
   let oldVersion: string | null = null;
   let newVersion: string | null = null;
 
   if (targetPrNumber) {
-    const existingPR = await pr.getPR(targetPrNumber);
+    const existingPR = await prClient.getPR(targetPrNumber);
     console.log(`Target PR: ${cyan(`#${targetPrNumber}`)} - ${existingPR.title}`);
 
     // Parse selection from PR body
@@ -279,7 +317,7 @@ async function handleCreateOrUpdate(
     console.log(yellow('\nDRY RUN (use --execute to create PR)\n'));
   }
 
-  const result = await pr.createOrUpdate(bump, changelog, isDryRun, debugEntry);
+  const result = await prClient.createOrUpdate(bump, changelog, isDryRun, debugEntry);
 
   if (!isDryRun && result.url) {
     console.log(`\nRelease PR ready: ${green(result.url)}`);
