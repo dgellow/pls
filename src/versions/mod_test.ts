@@ -1,5 +1,6 @@
 import { assertEquals } from '@std/assert';
 import {
+  getSha,
   getVersion,
   hasVersionsManifest,
   readVersions,
@@ -92,6 +93,85 @@ Deno.test('hasVersionsManifest - returns true when exists', async () => {
   try {
     await writeVersions({ '.': '1.0.0' }, tempDir);
     assertEquals(await hasVersionsManifest(tempDir), true);
+  } finally {
+    await Deno.remove(tempDir, { recursive: true });
+  }
+});
+
+// getSha tests - critical for understanding the steady repo issue
+Deno.test('getSha - returns null for old string format (no SHA)', async () => {
+  const tempDir = await Deno.makeTempDir();
+  try {
+    await Deno.mkdir(`${tempDir}/.pls`, { recursive: true });
+    // Old format: just version strings, no SHA
+    await Deno.writeTextFile(
+      `${tempDir}/.pls/versions.json`,
+      JSON.stringify({
+        '.': '0.1.0',
+        'packages/json-pointer': '0.1.0',
+        'packages/json-schema': '0.1.0',
+      }),
+    );
+
+    // getSha should return null for old string format
+    assertEquals(await getSha('.', tempDir), null);
+    assertEquals(await getSha('packages/json-pointer', tempDir), null);
+  } finally {
+    await Deno.remove(tempDir, { recursive: true });
+  }
+});
+
+Deno.test('getSha - returns SHA for new object format', async () => {
+  const tempDir = await Deno.makeTempDir();
+  try {
+    await Deno.mkdir(`${tempDir}/.pls`, { recursive: true });
+    // New format: objects with version and sha
+    await Deno.writeTextFile(
+      `${tempDir}/.pls/versions.json`,
+      JSON.stringify({
+        '.': { version: '0.1.0', sha: 'abc123def456' },
+        'packages/a': { version: '0.2.0', sha: 'def789ghi012' },
+      }),
+    );
+
+    assertEquals(await getSha('.', tempDir), 'abc123def456');
+    assertEquals(await getSha('packages/a', tempDir), 'def789ghi012');
+  } finally {
+    await Deno.remove(tempDir, { recursive: true });
+  }
+});
+
+Deno.test('getSha - returns null for missing path', async () => {
+  const tempDir = await Deno.makeTempDir();
+  try {
+    await Deno.mkdir(`${tempDir}/.pls`, { recursive: true });
+    await Deno.writeTextFile(
+      `${tempDir}/.pls/versions.json`,
+      JSON.stringify({ '.': { version: '1.0.0', sha: 'abc123' } }),
+    );
+
+    assertEquals(await getSha('nonexistent', tempDir), null);
+  } finally {
+    await Deno.remove(tempDir, { recursive: true });
+  }
+});
+
+Deno.test('getVersion - works with both old and new formats', async () => {
+  const tempDir = await Deno.makeTempDir();
+  try {
+    await Deno.mkdir(`${tempDir}/.pls`, { recursive: true });
+    // Mixed format
+    await Deno.writeTextFile(
+      `${tempDir}/.pls/versions.json`,
+      JSON.stringify({
+        '.': '1.0.0', // old string format
+        'packages/a': { version: '2.0.0', sha: 'abc123' }, // new object format
+      }),
+    );
+
+    // getVersion should work with both formats
+    assertEquals(await getVersion('.', tempDir), '1.0.0');
+    assertEquals(await getVersion('packages/a', tempDir), '2.0.0');
   } finally {
     await Deno.remove(tempDir, { recursive: true });
   }
