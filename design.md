@@ -1,8 +1,110 @@
-# pls Architecture
+# pls Design
 
 ## Mission
 
 Automate semantic versioning releases. Read git history, calculate versions, update files, create releases.
+
+---
+
+## Branch Strategies
+
+### Strategy A: Simple (main only)
+
+```
+main ──●──●──●──●──●──●──●──●──
+              │              ↑
+              └─ pls-release ┘
+```
+
+- Commits land on `main`
+- Release PR: `pls-release` → `main`
+- Default, works for most projects
+
+### Strategy B: Next branch (Stainless pattern)
+
+```
+next ──●──●──●──●──●──●──●──●
+              │
+              └─ pls-release ─┐
+                              ↓
+main ─────────────────────────●
+```
+
+- Commits land on `next` (development)
+- Release PR: `pls-release` → `main` (production)
+- After merge: `next` rebased on `main`
+- Clean separation of released vs upcoming
+
+---
+
+## Actors & Triggers
+
+**No webhooks.** Everything is CLI or CI.
+
+| Workflow | Trigger | Runner |
+|----------|---------|--------|
+| `pls prep` | Manual, or CI on push to baseBranch | Developer CLI or CI |
+| `pls sync` | CI on `pull_request.edited` event | CI only |
+| `pls release` | CI on PR merge to targetBranch | CI only |
+| `pls` (local) | Manual | Developer CLI |
+
+---
+
+## Manifests
+
+| File | Content | Updated By | When |
+|------|---------|------------|------|
+| `deno.json` | `{ "version": "1.2.3" }` | pls prep | In release PR |
+| `.pls/versions.json` | `{ ".": { "version": "1.2.3" } }` | pls prep | In release PR |
+| `CHANGELOG.md` | Release notes | pls prep | In release PR |
+| `src/version.ts` | `export const VERSION = "1.2.3"` | pls prep | In release PR (optional) |
+| `.pls/config.json` | Configuration | Developer | Manual |
+
+### No SHA in versions.json
+
+**The chicken-egg problem:** We can't know the final SHA until after merge (squash/rebase create new SHAs).
+
+**Solution:** Don't store SHA. Derive it from tags.
+
+```
+versions.json: { "version": "1.2.3" }
+                      │
+                      ▼
+         Look up tag v1.2.3 → get SHA
+```
+
+- **versions.json** = source of truth for "what is current version"
+- **Tag** = source of truth for "what SHA is that version"
+- Tag created post-merge by `pls release`, when real SHA is known
+
+### Spurious tag protection
+
+If someone manually creates `v4.0.0` before it's released:
+
+```
+Tags: v1.2.3, v4.0.0 (spurious)
+versions.json: { "version": "1.2.3" }
+```
+
+pls reads versions.json → "1.2.3" → looks up `v1.2.3` → ignores `v4.0.0`.
+
+We don't scan tags. We look up specific tags based on versions.json.
+
+---
+
+## Configuration
+
+```json
+// .pls/config.json (optional - convention over configuration)
+{
+  "baseBranch": "next",           // where commits land (default: main)
+  "targetBranch": "main",         // where releases merge to (default: main)
+  "releaseBranch": "pls-release", // PR branch name
+  "versionFile": "src/version.ts" // optional TypeScript version file
+}
+```
+
+---
 
 ## The Two Worlds
 
@@ -11,22 +113,14 @@ Automate semantic versioning releases. Read git history, calculate versions, upd
 - Write: filesystem → git commit → git tag
 - History: git log
 
-**Remote execution**: CI runs `pls prep`, webhook syncs PR.
-- Read: GitHub Contents API
+**Remote execution**: CI runs `pls prep`, `pls sync`, `pls release`.
+- Read: GitHub Contents API (or local git for history)
 - Write: staged in memory → Git Data API (tree → commit → ref)
-- History: local git (for prep) or irrelevant (for sync)
+- History: local git
 
-Fundamental tension: **local writes are incremental, remote writes are atomic**.
+**Fundamental tension:** Local writes are incremental, remote writes are atomic.
 
-## Files That Change
-
-Every release updates:
-1. `deno.json` / `package.json` (version field)
-2. `.pls/versions.json` (version + SHA per package)
-3. `CHANGELOG.md` (prepend notes)
-4. Optional: `version.ts` (exported constant)
-
-For workspaces: multiple manifests, one versions.json.
+---
 
 ## Core Operations
 
@@ -38,7 +132,9 @@ For workspaces: multiple manifests, one versions.json.
 | Commit | I/O | Create commit with changes |
 | Point | I/O | Update branch/tag to commit |
 | Release | I/O | Create GitHub Release (optional) |
-| PR | I/O | Create/update pull request (GitHub-only) |
+| PR | I/O | Create/update pull request |
+
+---
 
 ## Layer Architecture
 
@@ -51,7 +147,7 @@ For workspaces: multiple manifests, one versions.json.
                               ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                        Workflows                             │
-│   LocalRelease    PRCreate    PRSync    Transition          │
+│   LocalRelease    PRCreate    PRSync    PRRelease           │
 │         (Orchestration: call services, call clients)         │
 └─────────────────────────────────────────────────────────────┘
                               │
@@ -80,14 +176,17 @@ For workspaces: multiple manifests, one versions.json.
 │  • commit                  │  • pointBranch                 │
 │  • pointBranch             │  • createTag                   │
 │  • createTag               │  • findPR / getPR / createPR   │
-│                            │  • updatePR / createRelease    │
+│  • getTagSha               │  • updatePR                    │
+│                            │  • createGitHubRelease         │
 │  (filesystem + git CLI)    │  (GitHub API)                  │
 └────────────────────────────┴────────────────────────────────┘
 ```
 
-## Key Design Principle
+---
 
-**Branch is a parameter, not configuration.**
+## Key Design Principles
+
+### 1. Branch is a parameter, not configuration
 
 A commit exists independent of branches. A branch is just a pointer.
 
@@ -102,6 +201,27 @@ await client.pointBranch('pls-release', sha);
 await client.pointBranch('other-branch', sha);  // Same commit!
 ```
 
+### 2. SHA derived from tags, not stored
+
+- versions.json stores version only
+- SHA looked up from tag `v{version}`
+- Tag created post-merge when real SHA is known
+- Solves chicken-egg problem with squash/rebase merges
+
+### 3. Platform capabilities vs pls domain
+
+**Platform capabilities** (GitHubClient):
+- readFile, commit, pointBranch, createTag
+- findPR, createPR, updatePR
+- createGitHubRelease (optional enhancement)
+
+**pls domain** (workflows + domain services):
+- "What's the current version?" → read versions.json
+- "What SHA is that version?" → look up tag
+- "What files need to change?" → pure logic
+
+---
+
 ## Client Interfaces
 
 ### LocalGit
@@ -114,12 +234,14 @@ interface LocalGit {
 
   // Git history
   getCommitsSince(sha: string | null): Promise<Commit[]>;
-  getLastReleaseSha(): Promise<string | null>;
+  getTagSha(tag: string): Promise<string | null>;
+  getHeadSha(): Promise<string>;
 
   // Writing
   commit(files: Map<string, string>, message: string): Promise<string>;
   pointBranch(name: string, sha: string): Promise<void>;
   createTag(name: string, sha: string): Promise<void>;
+  push(ref: string): Promise<void>;
 }
 ```
 
@@ -140,156 +262,441 @@ interface GitHubClient {
 
   // PRs
   findPR(branch: string): Promise<PR | null>;
+  findMergedPR(branch: string): Promise<PR | null>;
   getPR(number: number): Promise<PR>;
   createPR(options: PROptions): Promise<PR>;
   updatePR(number: number, options: PROptions): Promise<void>;
 
-  // Releases
-  createRelease(tag: string, notes: string): Promise<Release>;
-  getLatestRelease(): Promise<Release | null>;
+  // GitHub Releases (optional, platform-specific)
+  createGitHubRelease(tag: string, notes: string): Promise<void>;
 }
 ```
+
+---
 
 ## Workflows
 
-### LocalRelease
+### 1. pls prep (Create/Update Release PR)
 
-Command: `pls`
+**Trigger:** Developer CLI or CI on push to baseBranch
 
-```typescript
-class LocalReleaseWorkflow {
-  constructor(private git: LocalGit) {}
-
-  async run(dryRun: boolean): Promise<Release> {
-    // Read
-    const lastSha = await this.git.getLastReleaseSha();
-    const commits = await this.git.getCommitsSince(lastSha);
-    const manifest = await this.git.readFile('deno.json');
-
-    // Compute (pure)
-    const current = parseVersion(manifest);
-    const bump = calculateBump(commits, current);
-    const files = buildReleaseFiles(manifest, bump);
-
-    if (dryRun) return preview(bump);
-
-    // Write
-    const sha = await this.git.commit(files, formatMessage(bump));
-    await this.git.createTag(`v${bump.to}`, sha);
-
-    return { version: bump.to, sha };
-  }
-}
+```
+┌─────────────────────────────────────────────────────────────┐
+│ 1. READ STATE                                               │
+│    • versions.json → current version "1.2.3"                │
+│    • Tag v1.2.3 → release SHA (or search commit if no tag)  │
+│    • Commits since release SHA                              │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│ 2. COMPUTE (pure)                                           │
+│    • Parse commits → bump type (minor)                      │
+│    • Calculate version → "1.3.0"                            │
+│    • Build file contents (manifests, changelog)             │
+│    • Generate PR body (version options, changelog)          │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│ 3. WRITE (if --execute)                                     │
+│    • Create commit with file changes                        │
+│    • Point pls-release branch to commit                     │
+│    • Create or update PR                                    │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-### PRCreate
+**UX - Dry run:**
+```
+$ pls prep
 
-Command: `pls prep`
+📦 pls prep
 
-```typescript
-class PRCreateWorkflow {
-  constructor(
-    private localGit: LocalGit,    // For commit history
-    private github: GitHubClient,  // For GitHub operations
-  ) {}
+Repository: dgellow/pls
+Base: next → Target: main
+Current version: 1.2.3 (from versions.json)
+Release point: v1.2.3 (abc1234)
 
-  async run(dryRun: boolean): Promise<PR> {
-    // Read (local git for history, GitHub for current state)
-    const lastSha = await this.localGit.getLastReleaseSha();
-    const commits = await this.localGit.getCommitsSince(lastSha);
-    const manifest = await this.github.readFile('deno.json');
+Commits since v1.2.3:
+  feat: add version file sync
+  fix: handle missing manifest
+  chore: update dependencies
 
-    // Compute (pure)
-    const bump = calculateBump(commits, parseVersion(manifest));
-    const files = buildReleaseFiles(manifest, bump);
-    const body = generatePRBody(bump);
+Version bump: 1.2.3 → 1.3.0 (minor)
 
-    if (dryRun) return preview(bump);
+Files to update:
+  deno.json            1.2.3 → 1.3.0
+  .pls/versions.json   1.2.3 → 1.3.0
+  CHANGELOG.md         (prepend release notes)
+  src/version.ts       1.2.3 → 1.3.0
 
-    // Write
-    const sha = await this.github.commit(files, formatMessage(bump));
-    await this.github.pointBranch('pls-release', sha);
-
-    const existing = await this.github.findPR('pls-release');
-    if (existing) {
-      await this.github.updatePR(existing.number, { title: `chore: release v${bump.to}`, body });
-      return existing;
-    }
-    return await this.github.createPR({ branch: 'pls-release', title: `chore: release v${bump.to}`, body });
-  }
-}
+DRY RUN — use --execute to create PR
 ```
 
-### PRSync
+**UX - Execute:**
+```
+$ pls prep --execute
 
-Command: `pls prep --github-pr=N` (webhook trigger)
+📦 pls prep
 
-```typescript
-class PRSyncWorkflow {
-  constructor(private github: GitHubClient) {}
+Version bump: 1.2.3 → 1.3.0 (minor)
 
-  async run(prNumber: number, dryRun: boolean): Promise<void> {
-    // Read PR state
-    const pr = await this.github.getPR(prNumber);
-    const selection = parseVersionSelection(pr.body);
-    const currentVersion = extractVersionFromTitle(pr.title);
+Creating commit... ✓
+Updating branch pls-release... ✓
+Creating pull request... ✓
 
-    // No-op if already synced
-    if (currentVersion === selection.version) return;
+✅ Release PR: https://github.com/dgellow/pls/pull/42
 
-    // Compute
-    const manifest = await this.github.readFile('deno.json');
-    const files = buildReleaseFiles(manifest, selection);
-
-    if (dryRun) return;
-
-    // Write
-    const sha = await this.github.commit(files, formatMessage(selection));
-    await this.github.pointBranch(pr.head.ref, sha);
-    await this.github.updatePR(prNumber, {
-      title: `chore: release v${selection.version}`,
-      body: updateSelection(pr.body, selection.version),
-    });
-  }
-}
+Next steps:
+  1. Review the PR
+  2. Optionally select different version
+  3. Merge when ready
 ```
 
-## What Dies
+---
+
+### 2. pls sync (Sync PR after version selection change)
+
+**Trigger:** CI on `pull_request.edited` event
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ 1. READ PR STATE                                            │
+│    • Get PR body → parse selected version                   │
+│    • Get PR title → extract current version                 │
+│    • Compare: same? → exit (no-op)                          │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼ (if different)
+┌─────────────────────────────────────────────────────────────┐
+│ 2. COMPUTE                                                  │
+│    • Build file contents for selected version               │
+│    • Generate updated PR body                               │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│ 3. WRITE                                                    │
+│    • Create commit with new files                           │
+│    • Force-update PR branch                                 │
+│    • Update PR title and body                               │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**UX:**
+```
+$ pls sync --pr=42
+
+📦 pls sync
+
+PR #42: chore: release v1.3.0
+Selection changed: 1.3.0 → 2.0.0
+
+Updating files for v2.0.0... ✓
+Updating branch... ✓
+Updating PR... ✓
+
+✅ PR synced to v2.0.0
+```
+
+**How it knows PR number:**
+- CI: From event payload (`github.event.pull_request.number`)
+- CLI: `--pr=42` or auto-detect (find open PR from pls-release branch)
+
+---
+
+### 3. pls release (Post-merge: create tag + GitHub Release)
+
+**Trigger:** CI on PR merge (pull_request.closed with merged=true)
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ 1. DETECT MERGE                                             │
+│    • From CI event, or find recently merged pls-release PR  │
+│    • Read version from merged manifest on targetBranch      │
+│    • Get merge commit SHA                                   │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│ 2. CHECK EXISTING (idempotency)                             │
+│    • Tag v{version} exists? → skip tag creation             │
+│    • GitHub Release exists? → skip release creation         │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│ 3. CREATE RELEASE ARTIFACTS                                 │
+│    • Create annotated tag v{version} → merge commit SHA     │
+│    • Create GitHub Release with changelog                   │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼ (if using next branch)
+┌─────────────────────────────────────────────────────────────┐
+│ 4. SYNC BRANCHES (optional)                                 │
+│    • Rebase next on main, or merge main into next           │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**This solves chicken-egg:** Tag created AFTER merge, points to actual SHA.
+
+**UX:**
+```
+$ pls release
+
+📦 pls release
+
+Detecting merged release PR...
+Found: PR #42 merged → abc1234
+
+Version: 1.3.0
+
+Creating tag v1.3.0... ✓
+Creating GitHub Release... ✓
+
+✅ Released v1.3.0
+   https://github.com/dgellow/pls/releases/tag/v1.3.0
+```
+
+**How it knows what was merged:**
+- CI: From event payload (merged PR)
+- CLI: `--pr=42` or auto-detect from recently merged PR, or read version from HEAD
+
+---
+
+### 4. pls (Local release, no PR)
+
+**Trigger:** Developer runs `pls` for direct release
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ 1. DETECT & COMPUTE (same as prep)                          │
+│    • Find release point, get commits, calculate bump        │
+│    • Build file contents                                    │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│ 2. LOCAL OPERATIONS                                         │
+│    • Write files to filesystem                              │
+│    • git add + git commit                                   │
+│    • git tag v{version}                                     │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼ (if --push)
+┌─────────────────────────────────────────────────────────────┐
+│ 3. PUSH                                                     │
+│    • git push origin {branch}                               │
+│    • git push origin v{version}                             │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼ (if --github-release)
+┌─────────────────────────────────────────────────────────────┐
+│ 4. GITHUB RELEASE (optional)                                │
+│    • Create via API                                         │
+└─────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Complete Release Lifecycle (PR Flow)
+
+```
+Developer                    GitHub                     CI
+────────                    ──────                     ──
+    │                           │                       │
+    │ push to next              │                       │
+    │──────────────────────────▶│                       │
+    │                           │ push event            │
+    │                           │──────────────────────▶│
+    │                           │                       │ pls prep --execute
+    │                           │◀──────────────────────│
+    │                           │ PR created            │
+    │                           │                       │
+    │                           │ User edits PR         │
+    │                           │ (selects v2.0.0)      │
+    │                           │ pull_request.edited   │
+    │                           │──────────────────────▶│
+    │                           │                       │ pls sync --pr=N
+    │                           │◀──────────────────────│
+    │                           │ Branch updated        │
+    │                           │                       │
+    │ Merges PR                 │                       │
+    │──────────────────────────▶│                       │
+    │                           │ pull_request.closed   │
+    │                           │ (merged=true)         │
+    │                           │──────────────────────▶│
+    │                           │                       │ pls release
+    │                           │◀──────────────────────│
+    │                           │ Tag + Release created │
+    │                           │                       │
+```
+
+---
+
+## CI Configuration
+
+### GitHub Actions
+
+```yaml
+# .github/workflows/pls-prep.yml
+name: Prepare Release
+on:
+  push:
+    branches: [next]  # or [main] for simple strategy
+
+jobs:
+  prep:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for commit detection
+      - run: pls prep --execute
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+```
+
+```yaml
+# .github/workflows/pls-sync.yml
+name: Sync Release PR
+on:
+  pull_request:
+    types: [edited]
+    branches: [main]
+
+jobs:
+  sync:
+    if: startsWith(github.head_ref, 'pls-release')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - run: pls sync --pr=${{ github.event.pull_request.number }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+```
+
+```yaml
+# .github/workflows/pls-release.yml
+name: Create Release
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+jobs:
+  release:
+    if: github.event.pull_request.merged == true && startsWith(github.head_ref, 'pls-release')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: pls release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+```
+
+---
+
+## Version Selection in PR
+
+PR body contains selectable version options:
+
+```markdown
+## Release 1.3.0
+
+...changelog...
+
+<details>
+<summary>Version Selection</summary>
+
+<!-- pls:options -->
+- [ ] 2.0.0 (major - breaking changes)
+- [x] 1.3.0 (minor - new features) ← selected
+- [ ] 1.2.4 (patch - bug fixes only)
+- [ ] 1.3.0-beta.1 (prerelease)
+<!-- pls:options:end -->
+
+</details>
+```
+
+User checks different box → saves PR → CI runs `pls sync` → branch updated.
+
+---
+
+## Failure Recovery & Idempotency
+
+### Idempotency Matrix
+
+| Operation | Idempotent | On Retry |
+|-----------|------------|----------|
+| Read files | ✅ Yes | Same result |
+| Read commits | ✅ Yes | Same result |
+| Compute version/files | ✅ Yes | Same result |
+| Create commit | ❌ No | New commit (safe, old orphaned) |
+| Update branch ref | ✅ Yes | Same SHA = no-op |
+| Create PR | ✅ Yes | If exists → update instead |
+| Update PR | ✅ Yes | Same content = no-op |
+| Create tag | ✅ Yes | If exists → skip |
+| Create GitHub Release | ✅ Yes | If exists → skip |
+
+### Failure Scenarios
+
+**Scenario 1: GitHub fails mid-commit creation**
+```
+Create blob ✓
+Create tree ✓
+Create commit ✗ (network error)
+```
+→ Retry. Orphaned blobs/trees are harmless (GitHub GCs them).
+
+**Scenario 2: Commit created but branch not updated**
+```
+Create commit ✓ (sha: xyz789)
+Update branch ✗ (network error)
+```
+→ Retry `pls prep`. New commit created, branch updated. Old commit orphaned (harmless).
+
+**Scenario 3: Branch updated but PR not created**
+```
+Update branch ✓
+Create PR ✗ (network error)
+```
+→ Retry `pls prep`. Finds no PR, creates it. Branch already correct.
+
+**Scenario 4: PR merged but tag not created**
+```
+PR merged ✓
+Create tag ✗ (network error)
+```
+→ Run `pls release` again. Creates tag (idempotent).
+
+**Scenario 5: Tag created but GitHub Release not created**
+```
+Create tag ✓
+Create release ✗ (network error)
+```
+→ Run `pls release` again. Tag exists (skip), creates release.
+
+**All failures are recoverable by retry.**
+
+---
+
+## What Dies (Current → Target)
 
 | Current Abstraction | Fate |
 |---------------------|------|
-| `Storage` interface | Absorbed. Reading = `getLatestRelease`. Writing = `createRelease`. |
+| `Storage` interface | Gone. Version from versions.json, SHA from tag. |
 | `Manifest` classes | Absorbed into `buildReleaseFiles`. Just JSON parsing. |
-| `versions/mod.ts` | Absorbed. Just file reading + JSON. |
+| `versions/mod.ts` | Absorbed into domain services. |
 | `FileBackend` / `CommitBackend` | Replaced by `LocalGit` / `GitHubClient`. |
 | Backend factories | Gone. Branch is a parameter. |
 | `ReleasePullRequest` | Split into workflows + `GitHubClient`. |
+| `ReleaseManager` | Split into workflows + domain services. |
+| SHA in versions.json | Gone. Derived from tags. |
 
-## Refactoring Path
-
-### Phase 1: Immediate Fix
-- Fix `GitHubBackend.updateBranchRef` to take branch as parameter
-- Eliminates factory pattern
-
-### Phase 2: Extract GitHubClient
-- Move PR operations from `ReleasePullRequest` into `GitHubClient`
-- `ReleasePullRequest` uses `GitHubClient` instead of raw API calls
-
-### Phase 3: Pure Domain Services
-- Create `buildReleaseFiles` as pure function
-- Move file-building logic out of backends
-- Create `calculateBump`, `generateChangelog` as pure functions
-
-### Phase 4: Workflow Separation
-- Create `PRCreateWorkflow`, `PRSyncWorkflow`, `LocalReleaseWorkflow`
-- Thin orchestration layer
-- Delete `ReleaseManager`, `ReleasePullRequest` classes
-
-### Phase 5: Cleanup
-- Delete `Storage` interface (absorbed into clients)
-- Delete `Manifest` classes (absorbed into domain services)
-- Delete `versions/mod.ts` (absorbed into domain services)
-- Consolidate into clean layer structure
+---
 
 ## Directory Structure (Target)
 
@@ -298,14 +705,15 @@ src/
 ├── cli/
 │   ├── main.ts           # Entry point, arg parsing
 │   ├── prep.ts           # pls prep command
-│   ├── transition.ts     # pls transition command
+│   ├── sync.ts           # pls sync command
+│   ├── release.ts        # pls release command
 │   └── output.ts         # Formatting, colors, dry-run display
 │
 ├── workflows/
 │   ├── local-release.ts  # pls (local release)
 │   ├── pr-create.ts      # pls prep (create/update PR)
-│   ├── pr-sync.ts        # pls prep --github-pr=N
-│   └── transition.ts     # pls transition
+│   ├── pr-sync.ts        # pls sync (sync PR selection)
+│   └── pr-release.ts     # pls release (post-merge tag + release)
 │
 ├── domain/
 │   ├── bump.ts           # calculateBump (pure)
@@ -324,3 +732,36 @@ src/
     ├── error.ts          # PlsError
     └── semver.ts         # Version parsing utilities
 ```
+
+---
+
+## Refactoring Path
+
+### Phase 1: Fix Branch Parameter
+- Change `GitHubBackend.updateBranchRef` to take branch as parameter
+- Eliminates factory pattern immediately
+
+### Phase 2: Extract GitHubClient
+- Move PR operations from `ReleasePullRequest` into `GitHubClient`
+- Single client for all GitHub operations
+
+### Phase 3: Pure Domain Services
+- Extract `buildReleaseFiles` as pure function
+- Extract `calculateBump`, `generateChangelog` as pure functions
+- Move file-building logic out of backends
+
+### Phase 4: Workflow Separation
+- Create `PRCreateWorkflow`, `PRSyncWorkflow`, `PRReleaseWorkflow`, `LocalReleaseWorkflow`
+- Thin orchestration layer
+- Delete `ReleaseManager`, `ReleasePullRequest` classes
+
+### Phase 5: Remove SHA from versions.json
+- Update versions.json schema (version only)
+- Add tag lookup for SHA
+- Add fallback commit search
+
+### Phase 6: Cleanup
+- Delete `Storage` interface
+- Delete `Manifest` classes
+- Delete `versions/mod.ts`
+- Consolidate into clean layer structure
