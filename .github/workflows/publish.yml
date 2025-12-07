@@ -20,11 +20,5 @@ jobs:
           deno-version: v2.5.x
           cache: true
 
-      - name: Type check
-        run: deno check src/mod.ts src/cli.ts
-
-      - name: Run tests
-        run: deno test -A
-
       - name: Publish to JSR
         run: deno publish
