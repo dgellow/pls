@@ -240,24 +240,53 @@ export class ReleasePullRequest {
     );
     const baseSha = baseRef.object.sha;
 
-    // Reset branch to base
+    // Create new commit first, THEN update branch ref atomically
+    // DO NOT reset branch to base first - that causes GitHub to auto-close
+    // the PR (0 commits = closed) before the new commit is pushed
+    const commitSha = await this.createReleaseCommitAndGetSha(bump, changelog, baseSha);
+
+    // Now update branch ref to point to the new commit
     await this.request(
       `/repos/${this.owner}/${this.repo}/git/refs/heads/${this.releaseBranch}`,
       {
         method: 'PATCH',
-        body: JSON.stringify({ sha: baseSha, force: true }),
+        body: JSON.stringify({ sha: commitSha, force: true }),
       },
     );
-
-    // Create new commit
-    await this.createReleaseCommit(bump, changelog, baseSha);
   }
 
+  /**
+   * Create release commit and update branch ref.
+   * Used by createBranch for initial PR creation.
+   */
   private async createReleaseCommit(
+    bump: VersionBump,
+    changelog: string,
+    baseSha: string,
+  ): Promise<void> {
+    const commitSha = await this.createReleaseCommitAndGetSha(bump, changelog, baseSha);
+
+    // Update branch ref
+    await this.request(
+      `/repos/${this.owner}/${this.repo}/git/refs/heads/${this.releaseBranch}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ sha: commitSha }),
+      },
+    );
+  }
+
+  /**
+   * Create release commit and return its SHA without updating branch ref.
+   * This allows the caller to update the branch ref atomically, avoiding
+   * the race condition where resetting the branch first causes GitHub
+   * to auto-close the PR (0 commits = closed).
+   */
+  private async createReleaseCommitAndGetSha(
     bump: VersionBump,
     _changelog: string,
     baseSha: string,
-  ): Promise<void> {
+  ): Promise<string> {
     // Generate structured commit message with embedded metadata
     const commitMessage = generateReleaseCommitMessage({
       version: bump.to,
@@ -369,14 +398,7 @@ export class ReleasePullRequest {
       },
     );
 
-    // Update branch ref
-    await this.request(
-      `/repos/${this.owner}/${this.repo}/git/refs/heads/${this.releaseBranch}`,
-      {
-        method: 'PATCH',
-        body: JSON.stringify({ sha: commit.sha }),
-      },
-    );
+    return commit.sha;
   }
 
   private generatePRBody(

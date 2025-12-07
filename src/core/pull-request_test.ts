@@ -2,6 +2,63 @@ import { assertEquals, assertThrows } from '@std/assert';
 import { ReleasePullRequest } from './pull-request.ts';
 import { PlsError } from '../types.ts';
 
+/**
+ * Test helper: Creates a ReleasePullRequest with a mocked request method
+ * that tracks all API calls made.
+ */
+function createMockedPR(): {
+  pr: ReleasePullRequest;
+  requests: Array<{ path: string; method: string; body?: unknown }>;
+} {
+  const requests: Array<{ path: string; method: string; body?: unknown }> = [];
+
+  const pr = new ReleasePullRequest({
+    owner: 'test',
+    repo: 'repo',
+    token: 'test-token',
+  });
+
+  // Mock the private request method
+  // deno-lint-ignore no-explicit-any
+  (pr as any).request = (path: string, options: RequestInit = {}): Promise<unknown> => {
+    const body = options.body ? JSON.parse(options.body as string) : undefined;
+    requests.push({
+      path,
+      method: options.method || 'GET',
+      body,
+    });
+
+    // Return mock responses based on the path
+    if (path.includes('/git/ref/heads/main')) {
+      return Promise.resolve({ object: { sha: 'base-sha-123' } });
+    }
+    if (path.includes('/git/commits/base-sha-123')) {
+      return Promise.resolve({ tree: { sha: 'tree-sha-123' } });
+    }
+    if (path.includes('/contents/deno.json')) {
+      return Promise.resolve({ content: btoa('{"version": "1.0.0"}') });
+    }
+    if (path.includes('/contents/.pls/versions.json')) {
+      return Promise.resolve({ content: btoa('{"."": "1.0.0"}') });
+    }
+    if (path.includes('/git/blobs')) {
+      return Promise.resolve({ sha: 'blob-sha-' + Math.random().toString(36).slice(2) });
+    }
+    if (path.includes('/git/trees')) {
+      return Promise.resolve({ sha: 'new-tree-sha-123' });
+    }
+    if (path.includes('/git/commits') && options.method === 'POST') {
+      return Promise.resolve({ sha: 'new-commit-sha-456' });
+    }
+    if (path.includes('/git/refs/heads/pls-release')) {
+      return Promise.resolve({});
+    }
+    return Promise.resolve({});
+  };
+
+  return { pr, requests };
+}
+
 Deno.test('ReleasePullRequest - requires token', () => {
   // Clear any existing token
   const originalToken = Deno.env.get('GITHUB_TOKEN');
@@ -114,4 +171,65 @@ Deno.test('ReleasePullRequest - createVersionsManifest dry run shows correct out
   } finally {
     console.log = originalLog;
   }
+});
+
+/**
+ * Regression test for PR auto-close bug.
+ *
+ * The bug: When updating the pls-release branch, the old code would:
+ * 1. Reset branch to main SHA (force push)
+ * 2. Create new release commit
+ *
+ * This caused GitHub to auto-close the PR between steps 1 and 2 because
+ * the branch temporarily had 0 commits different from main.
+ *
+ * The fix: Create the commit first, then update the branch ref atomically.
+ */
+Deno.test('ReleasePullRequest - updateBranch must not reset branch to base before creating commit', async () => {
+  const { pr, requests } = createMockedPR();
+
+  const bump = {
+    from: '1.0.0',
+    to: '1.1.0',
+    type: 'minor' as const,
+    commits: [],
+  };
+
+  // Call the private updateBranch method
+  // deno-lint-ignore no-explicit-any
+  await (pr as any).updateBranch(bump, 'changelog');
+
+  // Find all PATCH requests to the pls-release branch ref
+  const branchRefPatches = requests.filter(
+    (r) => r.path.includes('/git/refs/heads/pls-release') && r.method === 'PATCH',
+  );
+
+  // There should be exactly ONE PATCH to the branch ref
+  assertEquals(
+    branchRefPatches.length,
+    1,
+    'Should only PATCH the branch ref once (not reset then update)',
+  );
+
+  // The PATCH should use the NEW commit SHA, not the base SHA
+  const patchBody = branchRefPatches[0].body as { sha: string; force?: boolean };
+  assertEquals(
+    patchBody.sha,
+    'new-commit-sha-456',
+    'Branch ref should be updated to new commit SHA, not reset to base SHA first',
+  );
+
+  // Verify the commit was created BEFORE the branch ref update
+  const commitCreateIndex = requests.findIndex(
+    (r) => r.path.includes('/git/commits') && r.method === 'POST',
+  );
+  const branchUpdateIndex = requests.findIndex(
+    (r) => r.path.includes('/git/refs/heads/pls-release') && r.method === 'PATCH',
+  );
+
+  assertEquals(
+    commitCreateIndex < branchUpdateIndex,
+    true,
+    'Commit must be created BEFORE branch ref is updated (to avoid PR auto-close)',
+  );
 });
