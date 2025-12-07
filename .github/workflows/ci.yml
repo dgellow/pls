@@ -23,6 +23,11 @@ jobs:
       - name: Lint
         run: deno lint
 
+      - name: Check lockfile is up to date
+        run: |
+          deno install
+          git diff --exit-code deno.lock || (echo "::error::deno.lock is out of date. Run 'deno install' and commit the changes." && exit 1)
+
   test:
     runs-on: ubuntu-latest
     steps:
