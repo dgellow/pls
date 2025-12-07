@@ -62,7 +62,8 @@ jobs:
         if: steps.check.outputs.is_release == 'true'
         run: deno run -A src/cli.ts --storage=github --execute
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Use PAT instead of GITHUB_TOKEN so the release event triggers other workflows
+          GITHUB_TOKEN: ${{ secrets.PLS_RELEASE_TOKEN }}
 
       - name: Create/update release PR (on regular commit)
         if: steps.check.outputs.is_release == 'false'
