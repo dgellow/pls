@@ -45,8 +45,27 @@ main ─────────────────────────
 |----------|---------|--------|
 | `pls prep` | Manual, or CI on push to baseBranch | Developer CLI or CI |
 | `pls sync` | CI on `pull_request.edited` event | CI only |
-| `pls release` | CI on PR merge to targetBranch | CI only |
+| `pls release` | CI on **every push to targetBranch** | CI only |
 | `pls` (local) | Manual | Developer CLI |
+
+### Self-Healing via Continuous Release
+
+`pls release` runs on **every push to main**, not just PR merges:
+
+```yaml
+on:
+  push:
+    branches: [main]
+```
+
+This provides **automatic recovery** from failures:
+
+1. PR merged → versions.json = 1.2.3
+2. CI runs `pls release` → **tag creation fails** (network error)
+3. User doesn't notice, pushes unrelated commit
+4. CI runs `pls release` again → tag v1.2.3 still missing → **creates it**
+
+No special recovery logic. The normal path handles failures.
 
 ---
 
@@ -151,6 +170,9 @@ async function findLastReleaseSha(version: string): Promise<string | null> {
   // 1. Check if tag exists
   const tagSha = await git.getTagSha(tag);
   if (!tagSha) {
+    // Tag missing — previous release may have failed
+    // This is NOT an error, just a warning (self-heals on next pls release)
+    console.warn(`Tag ${tag} not found (release may have failed)`);
     // Fallback: search for version-change commit
     return await git.findCommitByVersion(version);
   }
@@ -167,7 +189,20 @@ async function findLastReleaseSha(version: string): Promise<string | null> {
   // 3. Return the SHA the tag points to
   return tagSha;
 }
+
+// Fallback: find commit that introduced this version
+async function findCommitByVersion(version: string): Promise<string | null> {
+  // git log -S "version" --format="%H" -- .pls/versions.json | head -1
+  const sha = await git.searchLog(version, '.pls/versions.json');
+  return sha;
+}
 ```
+
+**Why fallback instead of error?**
+- Tag missing = previous `pls release` failed
+- But `pls prep` can still work with fallback SHA
+- `pls release` on next push will create the missing tag
+- Keep things moving, don't block on transient failures
 
 ### Consistency with Commit Messages
 
@@ -492,51 +527,75 @@ Updating PR... ✓
 
 ---
 
-### 3. pls release (Post-merge: create tag + GitHub Release)
+### 3. pls release (Ensure current version is released)
 
-**Trigger:** CI on PR merge (pull_request.closed with merged=true)
+**Trigger:** CI on **every push to targetBranch** (not just PR merges)
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│ 1. DETECT MERGE                                             │
-│    • From CI event, or find recently merged pls-release PR  │
-│    • Read version from merged manifest on targetBranch      │
-│    • Get merge commit SHA                                   │
+│ 1. READ CURRENT STATE                                       │
+│    • Read versions.json → current version "1.2.3"           │
+│    • Check if tag v1.2.3 exists                             │
+│    • Check if GitHub Release exists                         │
 └─────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────┐
-│ 2. CHECK EXISTING (idempotency)                             │
-│    • Tag v{version} exists? → skip tag creation             │
-│    • GitHub Release exists? → skip release creation         │
+│ 2. EARLY EXIT (idempotent)                                  │
+│    • Tag exists + Release exists → "Already released" exit 0│
+│    • Nothing to do = success, not error                     │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼ (if tag missing)
+┌─────────────────────────────────────────────────────────────┐
+│ 3. FIND RELEASE POINT                                       │
+│    • Search for commit that set version to 1.2.3            │
+│    • git log -S "1.2.3" -- .pls/versions.json | head -1     │
+│    • Or use HEAD if versions.json just changed              │
 └─────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────┐
-│ 3. CREATE RELEASE ARTIFACTS                                 │
-│    • Create annotated tag v{version} → merge commit SHA     │
-│    • Create GitHub Release with changelog                   │
+│ 4. CREATE RELEASE ARTIFACTS                                 │
+│    • Create annotated tag v{version} → release commit SHA   │
+│    • Create GitHub Release with changelog (if missing)      │
+│    • Handle "already exists" gracefully (concurrent runs)   │
 └─────────────────────────────────────────────────────────────┘
                               │
                               ▼ (if using next branch)
 ┌─────────────────────────────────────────────────────────────┐
-│ 4. SYNC BRANCHES (optional)                                 │
+│ 5. SYNC BRANCHES (optional)                                 │
 │    • Rebase next on main, or merge main into next           │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-**This solves chicken-egg:** Tag created AFTER merge, points to actual SHA.
+**Key behaviors:**
+- **Idempotent:** If already released, exits successfully (not error)
+- **Self-healing:** Finds and creates missing tag even if original CI failed
+- **Concurrent-safe:** "Tag already exists" → treat as success
 
-**UX:**
+**UX - Already released:**
 ```
 $ pls release
 
 📦 pls release
 
-Detecting merged release PR...
-Found: PR #42 merged → abc1234
+Version: 1.3.0
+Tag v1.3.0 exists ✓
+GitHub Release exists ✓
+
+Already released. Nothing to do.
+```
+
+**UX - Creating release:**
+```
+$ pls release
+
+📦 pls release
 
 Version: 1.3.0
+Tag v1.3.0 missing
+Finding release commit... abc1234
 
 Creating tag v1.3.0... ✓
 Creating GitHub Release... ✓
@@ -545,9 +604,21 @@ Creating GitHub Release... ✓
    https://github.com/dgellow/pls/releases/tag/v1.3.0
 ```
 
-**How it knows what was merged:**
-- CI: From event payload (merged PR)
-- CLI: `--pr=42` or auto-detect from recently merged PR, or read version from HEAD
+**UX - Self-healing (previous failure):**
+```
+$ pls release
+
+📦 pls release
+
+Version: 1.3.0
+Tag v1.3.0 missing (release may have failed previously)
+Finding release commit... abc1234
+
+Creating tag v1.3.0... ✓
+Creating GitHub Release... ✓
+
+✅ Released v1.3.0 (recovered)
+```
 
 ---
 
@@ -669,20 +740,21 @@ jobs:
 # .github/workflows/pls-release.yml
 name: Create Release
 on:
-  pull_request:
-    types: [closed]
-    branches: [main]
+  push:
+    branches: [main]  # Every push, not just PR merges
 
 jobs:
   release:
-    if: github.event.pull_request.merged == true && startsWith(github.head_ref, 'pls-release')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: pls release
+      - run: pls release --execute
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```
+
+**Why every push?** Self-healing. If tag creation fails once, next push fixes it.
+Most runs will be no-ops ("Already released"), which is cheap and fast.
 
 ---
 
@@ -757,16 +829,28 @@ Create PR ✗ (network error)
 PR merged ✓
 Create tag ✗ (network error)
 ```
-→ Run `pls release` again. Creates tag (idempotent).
+→ **Self-heals on next push.** `pls release` runs on every push to main.
+→ Next unrelated commit triggers CI → tag created automatically.
+→ Or: manual `pls release --execute` also works.
 
 **Scenario 5: Tag created but GitHub Release not created**
 ```
 Create tag ✓
 Create release ✗ (network error)
 ```
-→ Run `pls release` again. Tag exists (skip), creates release.
+→ **Self-heals on next push.** Tag exists (skip), release created.
 
-**All failures are recoverable by retry.**
+**Scenario 6: Concurrent `pls release` runs**
+```
+Job A: Check tag → missing
+Job B: Check tag → missing
+Job A: Create tag ✓
+Job B: Create tag → "already exists"
+```
+→ Job B treats "already exists" as success, not error.
+
+**All failures are recoverable automatically via self-healing.**
+**No manual intervention required for transient failures.**
 
 ---
 
