@@ -52,39 +52,55 @@ function createMockRequestHandler(
 }
 
 /**
+ * Creates a mock GitHubBackend with tracked requests.
+ */
+function createMockBackend(
+  requests: Array<{ path: string; method: string; body?: unknown }>,
+): GitHubBackend {
+  const mockRequest = createMockRequestHandler(requests);
+  const backend = new GitHubBackend({
+    owner: 'test',
+    repo: 'repo',
+    token: 'test-token',
+    baseBranch: 'main',
+    deferBranchUpdate: true,
+  });
+  // deno-lint-ignore no-explicit-any
+  (backend as any).request = mockRequest;
+  return backend;
+}
+
+/**
  * Test helper: Creates a ReleasePullRequest with mocked API calls.
- * Mocks both the request method and createBackend to track all calls.
+ * Uses dependency injection for clean mocking.
  */
 function createMockedPR(): {
   pr: ReleasePullRequest;
   requests: Array<{ path: string; method: string; body?: unknown }>;
 } {
   const requests: Array<{ path: string; method: string; body?: unknown }> = [];
-  const mockRequest = createMockRequestHandler(requests);
+  const mockBackend = createMockBackend(requests);
 
   const pr = new ReleasePullRequest({
     owner: 'test',
     repo: 'repo',
     token: 'test-token',
+    backend: mockBackend, // Inject mock backend via DI
   });
 
-  // Mock the private request method (for methods that use it directly)
+  // Mock createCommitBackend to return backends with mocked request
   // deno-lint-ignore no-explicit-any
-  (pr as any).request = mockRequest;
-
-  // Mock createBackend to return a backend with mocked request
-  // deno-lint-ignore no-explicit-any
-  (pr as any).createBackend = (): GitHubBackend => {
+  (pr as any).createCommitBackend = (targetBranch: string): GitHubBackend => {
     const backend = new GitHubBackend({
       owner: 'test',
       repo: 'repo',
       token: 'test-token',
       baseBranch: 'main',
-      targetBranch: 'pls-release',
+      targetBranch,
       deferBranchUpdate: true,
     });
     // deno-lint-ignore no-explicit-any
-    (backend as any).request = mockRequest;
+    (backend as any).request = createMockRequestHandler(requests);
     return backend;
   };
 
