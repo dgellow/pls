@@ -3,8 +3,8 @@
   "version": "0.4.2",
   "license": "Elastic-2.0",
   "exports": {
-    ".": "./src/mod.ts",
-    "./cli": "./src/cli.ts"
+    ".": "./src/cli.ts",
+    "./mod": "./src/mod.ts"
   },
   "tasks": {
     "dev": "deno run -A src/cli.ts",
