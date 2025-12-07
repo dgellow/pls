@@ -32,8 +32,40 @@ main ─────────────────────────
 
 - Commits land on `next` (development)
 - Release PR: `pls-release` → `main` (production)
-- After merge: `next` rebased on `main`
+- After merge: `next` rebased on `main` by `pls release`
 - Clean separation of released vs upcoming
+
+#### Branch Sync After Release
+
+When `pls release` completes on Strategy B, it syncs `next` onto `main`:
+
+```typescript
+async function syncNextBranch(maxRetries = 3): Promise<void> {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    await git.fetch('origin');
+    await git.checkout('-B', 'next', 'origin/next');
+    await git.rebase('origin/main');
+
+    const result = await git.push('--force-with-lease', 'origin', 'next');
+    if (result.success) {
+      console.log('✓ Synced next branch');
+      return;
+    }
+
+    console.warn(`Retry ${attempt}/${maxRetries}: next changed during sync`);
+  }
+
+  // After max retries, warn but don't fail the release
+  console.warn('Could not sync next branch. Manual sync may be needed.');
+}
+```
+
+**Why force-with-lease?**
+- Safe: fails if remote has commits we don't know about
+- Rebase replays any new commits on `next` automatically
+- Retry handles race condition if someone pushes during sync
+
+**Failure mode:** If sync fails after retries (constant activity on `next`), release still succeeds. Branch sync is best-effort; user can sync manually.
 
 ---
 
@@ -192,7 +224,12 @@ async function findLastReleaseSha(version: string): Promise<string | null> {
 
 // Fallback: find commit that introduced this version
 async function findCommitByVersion(version: string): Promise<string | null> {
+  // Search from HEAD backwards, return first match (most recent)
   // git log -S "version" --format="%H" -- .pls/versions.json | head -1
+  //
+  // Why first match? Linear history assumption. The most recent commit
+  // that touched this version string is the release commit. If history
+  // was rewritten and there are multiple, we take the most recent.
   const sha = await git.searchLog(version, '.pls/versions.json');
   return sha;
 }
@@ -224,6 +261,68 @@ Reuse `parseReleaseMetadata()` for both.
   "releaseBranch": "pls-release", // PR branch name
   "versionFile": "src/version.ts" // optional TypeScript version file
 }
+```
+
+---
+
+## Bootstrap (First-Time Setup)
+
+How does a new repo start with pls? No versions.json, no tags.
+
+### CLI: `pls init`
+
+```
+$ pls init
+
+📦 pls init
+
+Detecting project...
+Found: deno.json with version "1.0.0"
+
+Initialize pls with version 1.0.0? [Y/n] y
+
+Creating .pls/versions.json... ✓
+Creating tag v1.0.0... ✓
+
+✅ Initialized pls at v1.0.0
+
+Next steps:
+  1. Commit: git add .pls && git commit -m "chore: initialize pls"
+  2. Push: git push && git push origin v1.0.0
+  3. Start releasing: pls prep
+```
+
+**Detection order:**
+1. `deno.json` → `{ "version": "x.y.z" }`
+2. `package.json` → `{ "version": "x.y.z" }`
+3. Prompt user for initial version
+
+**What it creates:**
+- `.pls/versions.json` with detected version
+- Annotated tag `v{version}` pointing to HEAD
+- Optionally: `.pls/config.json` if non-default settings needed
+
+### CI: Bootstrap PR
+
+If `pls prep` runs but no versions.json exists:
+
+```
+$ pls prep --execute
+
+📦 pls prep
+
+No .pls/versions.json found.
+
+Detecting project version...
+Found: package.json with version "2.3.1"
+
+Creating bootstrap PR...
+  - Add .pls/versions.json (version: 2.3.1)
+  - Create tag v2.3.1 after merge
+
+✅ Bootstrap PR: https://github.com/org/repo/pull/1
+
+Merge this PR to initialize pls, then releases will work automatically.
 ```
 
 ---
@@ -784,6 +883,58 @@ User checks different box → saves PR → CI runs `pls sync` → branch updated
 
 ---
 
+## Prereleases (`pls transition`)
+
+pls supports prerelease workflows via the `pls transition` command.
+
+### Transition Targets
+
+| Target | Description |
+|--------|-------------|
+| `alpha` | Early development, unstable |
+| `beta` | Feature complete, testing |
+| `rc` | Release candidate, final testing |
+| `stable` | Production release |
+
+### Version Flow
+
+```
+Stable → Prerelease:
+  1.2.3  →  pls transition alpha  →  1.3.0-alpha.0
+
+Between prereleases:
+  1.3.0-alpha.5  →  pls transition beta  →  1.3.0-beta.0
+
+Prerelease → Stable:
+  1.3.0-rc.2  →  pls transition stable  →  1.3.0
+
+Within prerelease (normal releases):
+  1.3.0-alpha.0  →  (new commits)  →  1.3.0-alpha.1
+```
+
+### Key Behaviors
+
+**Starting a prerelease cycle:**
+- Bumps version first (default: minor)
+- Adds prerelease suffix: `1.3.0-alpha.0`
+- `--major` / `--minor` / `--patch` control the bump
+
+**During prerelease:**
+- Normal `pls prep` increments build number: `alpha.0` → `alpha.1`
+- Conventional commits don't affect version (already in prerelease)
+
+**Graduating to stable:**
+- `pls transition stable` strips the prerelease suffix
+- `1.3.0-rc.2` → `1.3.0`
+
+### Tags and Releases
+
+Prereleases get tags and GitHub Releases just like stable versions:
+- Tag: `v1.3.0-alpha.0`
+- GitHub Release: marked as "pre-release"
+
+---
+
 ## Failure Recovery & Idempotency
 
 ### Idempotency Matrix
@@ -936,3 +1087,64 @@ src/
 - Delete `Manifest` classes
 - Delete `versions/mod.ts`
 - Consolidate into clean layer structure
+
+---
+
+## Future: Monorepo Support
+
+Not implemented yet, but the design accommodates it.
+
+### versions.json Schema
+
+```json
+{
+  ".": { "version": "1.2.3" },
+  "packages/cli": { "version": "2.0.0" },
+  "packages/core": { "version": "1.5.0" }
+}
+```
+
+Each key is a path relative to repo root. `.` is the root package.
+
+### Tag Format
+
+Following npm/Lerna conventions:
+
+| Package | Tag Format | Example |
+|---------|------------|---------|
+| Root (`.`) | `v{version}` | `v1.2.3` |
+| Scoped | `{name}@{version}` | `@myorg/cli@2.0.0` |
+| Unscoped | `{name}@{version}` | `core@1.5.0` |
+
+The `@` style matches npm's `package@version` syntax and is widely recognized.
+
+### Independent vs Fixed Versioning
+
+**Independent (default):** Each package has its own version, released separately.
+
+**Fixed:** All packages share one version. Changes to any package bump all.
+Could be configured in `.pls/config.json`:
+
+```json
+{
+  "versioning": "fixed"  // or "independent" (default)
+}
+```
+
+### Commit Detection
+
+For independent versioning, detect which packages changed:
+
+```typescript
+// Get commits that touched files in package path
+const commits = await git.getCommitsSince(sha, {
+  paths: ['packages/cli/**']
+});
+```
+
+### Trade-off: Tag Explosion
+
+With many packages and frequent releases, tags can explode (thousands).
+Some teams prefer combined snapshot tags: `v2024.01.15`.
+
+For MVP: single-package support only. Monorepo is a future enhancement.
