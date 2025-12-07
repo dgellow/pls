@@ -15,9 +15,7 @@ import { PlsError } from './types.ts';
 import { handleTransition } from './cli-transition.ts';
 import { handlePrep } from './cli-prep.ts';
 import { PRComments } from './core/mod.ts';
-import denoJson from '../deno.json' with { type: 'json' };
-
-const VERSION = denoJson.version;
+import { VERSION } from './version_info.ts';
 
 /**
  * Get release metadata from the current HEAD commit.

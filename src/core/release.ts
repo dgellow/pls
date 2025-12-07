@@ -167,8 +167,8 @@ export class ReleaseManager {
         console.log(`Would update version in: ${wouldUpdate.join(', ')}`);
       }
 
-      // Check for version file
-      const versionFilePath = await resolveVersionFile();
+      // Check for version file (pass dryRun=true to avoid caching)
+      const versionFilePath = await resolveVersionFile('.', Deno.cwd(), true);
       if (versionFilePath) {
         console.log(`Would update version file: ${versionFilePath}`);
       }

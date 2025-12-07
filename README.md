@@ -116,6 +116,26 @@ The release PR always has exactly ONE commit. When the selection changes:
 4. PR title and description are updated
 5. Comment is posted noting the change
 
+## TypeScript Version File
+
+Keep a `VERSION` constant in sync with your `deno.json`:
+
+```typescript
+// src/version_info.ts
+// @pls-version
+export const VERSION = '1.2.3';
+```
+
+The magic comment `// @pls-version` tells pls to update this file during releases. On first run, pls
+scans `src/**/*.ts` for the comment and caches the path in `.pls/versions.json`.
+
+**Usage:**
+
+```typescript
+import { VERSION } from './version_info.ts';
+console.log(`My app v${VERSION}`);
+```
+
 ## Storage Backends
 
 - **Local**: JSON file in `.pls/` directory
