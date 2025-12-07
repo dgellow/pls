@@ -642,4 +642,259 @@ ${optionsBlock}
       return '0.0.0';
     }
   }
+
+  /**
+   * Check if .pls/versions.json exists on the base branch.
+   */
+  async versionsManifestExists(): Promise<boolean> {
+    try {
+      await this.request<{ content: string }>(
+        `/repos/${this.owner}/${this.repo}/contents/.pls/versions.json?ref=${this.baseBranch}`,
+      );
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Extract versions from existing deno.json/package.json files on the base branch.
+   * Handles workspaces by scanning all member packages.
+   */
+  async extractVersionsFromManifests(): Promise<Record<string, string>> {
+    const versions: Record<string, string> = {};
+
+    // Try to get root deno.json
+    let rootManifest: { version?: string; workspace?: string[] } | null = null;
+    try {
+      const file = await this.request<{ content: string }>(
+        `/repos/${this.owner}/${this.repo}/contents/deno.json?ref=${this.baseBranch}`,
+      );
+      rootManifest = JSON.parse(atob(file.content.replace(/\n/g, '')));
+    } catch {
+      // Try package.json
+      try {
+        const file = await this.request<{ content: string }>(
+          `/repos/${this.owner}/${this.repo}/contents/package.json?ref=${this.baseBranch}`,
+        );
+        rootManifest = JSON.parse(atob(file.content.replace(/\n/g, '')));
+      } catch {
+        // No manifest found
+      }
+    }
+
+    if (!rootManifest) {
+      return versions;
+    }
+
+    // Extract root version
+    if (rootManifest.version) {
+      versions['.'] = rootManifest.version;
+    }
+
+    // Check for workspace members
+    const workspacePatterns = rootManifest.workspace || [];
+    for (const pattern of workspacePatterns) {
+      // Skip glob patterns for now - only handle direct paths
+      if (pattern.includes('*')) continue;
+
+      // Try to get member's deno.json
+      try {
+        const memberPath = pattern.replace(/^\.\//, '');
+        const file = await this.request<{ content: string }>(
+          `/repos/${this.owner}/${this.repo}/contents/${memberPath}/deno.json?ref=${this.baseBranch}`,
+        );
+        const memberManifest = JSON.parse(atob(file.content.replace(/\n/g, '')));
+        if (memberManifest.version) {
+          versions[memberPath] = memberManifest.version;
+        }
+      } catch {
+        // Try package.json for this member
+        try {
+          const memberPath = pattern.replace(/^\.\//, '');
+          const file = await this.request<{ content: string }>(
+            `/repos/${this.owner}/${this.repo}/contents/${memberPath}/package.json?ref=${this.baseBranch}`,
+          );
+          const memberManifest = JSON.parse(atob(file.content.replace(/\n/g, '')));
+          if (memberManifest.version) {
+            versions[memberPath] = memberManifest.version;
+          }
+        } catch {
+          // No manifest for this member
+        }
+      }
+    }
+
+    return versions;
+  }
+
+  /**
+   * Create .pls/versions.json by extracting versions from existing project manifests.
+   * Can either create a PR or commit directly to the base branch.
+   */
+  async createVersionsManifest(
+    direct: boolean,
+    dryRun: boolean,
+  ): Promise<{ url?: string; direct: boolean; versions: Record<string, string> }> {
+    // Extract versions from existing manifests
+    const versions = await this.extractVersionsFromManifests();
+
+    if (Object.keys(versions).length === 0) {
+      // No versions found, use default
+      versions['.'] = '0.0.0';
+    }
+
+    const versionsContent = JSON.stringify(versions, null, 2) + '\n';
+
+    if (dryRun) {
+      if (direct) {
+        console.log(`Would create .pls/versions.json directly on ${this.baseBranch}:`);
+      } else {
+        console.log(`Would create setup PR with .pls/versions.json:`);
+      }
+      console.log(`  File: .pls/versions.json`);
+      console.log(`  Content:`);
+      for (const [path, version] of Object.entries(versions)) {
+        console.log(`    "${path}": "${version}"`);
+      }
+      return { direct, versions };
+    }
+
+    // Get base branch SHA
+    const baseRef = await this.request<{ object: { sha: string } }>(
+      `/repos/${this.owner}/${this.repo}/git/ref/heads/${this.baseBranch}`,
+    );
+    const baseSha = baseRef.object.sha;
+
+    // Get base tree
+    const baseCommit = await this.request<{ tree: { sha: string } }>(
+      `/repos/${this.owner}/${this.repo}/git/commits/${baseSha}`,
+    );
+
+    // Create blob for versions.json
+    const versionsBlob = await this.request<{ sha: string }>(
+      `/repos/${this.owner}/${this.repo}/git/blobs`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ content: versionsContent, encoding: 'utf-8' }),
+      },
+    );
+
+    // Create tree with versions.json
+    const tree = await this.request<{ sha: string }>(
+      `/repos/${this.owner}/${this.repo}/git/trees`,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          base_tree: baseCommit.tree.sha,
+          tree: [
+            { path: '.pls/versions.json', mode: '100644', type: 'blob', sha: versionsBlob.sha },
+          ],
+        }),
+      },
+    );
+
+    // Build commit message with package info
+    const packageList = Object.entries(versions)
+      .map(([path, version]) => `  - ${path === '.' ? 'root' : path}: ${version}`)
+      .join('\n');
+
+    const commitMessage = `chore: initialize pls versions manifest
+
+Creates .pls/versions.json for release tracking.
+
+Packages:
+${packageList}`;
+
+    const commit = await this.request<{ sha: string }>(
+      `/repos/${this.owner}/${this.repo}/git/commits`,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          message: commitMessage,
+          tree: tree.sha,
+          parents: [baseSha],
+        }),
+      },
+    );
+
+    if (direct) {
+      // Commit directly to base branch
+      await this.request(
+        `/repos/${this.owner}/${this.repo}/git/refs/heads/${this.baseBranch}`,
+        {
+          method: 'PATCH',
+          body: JSON.stringify({ sha: commit.sha }),
+        },
+      );
+      console.log(`Created .pls/versions.json directly on ${this.baseBranch}`);
+      return { direct: true, versions };
+    }
+
+    // Create a setup branch and PR
+    const setupBranch = 'pls-setup';
+
+    // Create or update setup branch
+    try {
+      await this.request(
+        `/repos/${this.owner}/${this.repo}/git/refs`,
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            ref: `refs/heads/${setupBranch}`,
+            sha: commit.sha,
+          }),
+        },
+      );
+    } catch {
+      // Branch exists, update it
+      await this.request(
+        `/repos/${this.owner}/${this.repo}/git/refs/heads/${setupBranch}`,
+        {
+          method: 'PATCH',
+          body: JSON.stringify({ sha: commit.sha, force: true }),
+        },
+      );
+    }
+
+    // Check for existing setup PR
+    const existingPRs = await this.request<GitHubPR[]>(
+      `/repos/${this.owner}/${this.repo}/pulls?head=${this.owner}:${setupBranch}&state=open`,
+    );
+
+    if (existingPRs.length > 0) {
+      console.log(`Updated existing setup PR #${existingPRs[0].number}`);
+      return { url: existingPRs[0].html_url, direct: false, versions };
+    }
+
+    // Build PR body with package info
+    const packageListMd = Object.entries(versions)
+      .map(([path, version]) => `- \`${path === '.' ? '.' : path}\`: ${version}`)
+      .join('\n');
+
+    // Create new PR
+    const pr = await this.request<GitHubPR>(
+      `/repos/${this.owner}/${this.repo}/pulls`,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          title: 'chore: initialize pls versions manifest',
+          body: `## Initialize pls
+
+This PR creates the \`.pls/versions.json\` manifest for release tracking.
+
+### Detected packages
+${packageListMd}
+
+---
+*Merge this PR to enable \`pls prep\` to create release PRs.*`,
+          head: setupBranch,
+          base: this.baseBranch,
+        }),
+      },
+    );
+
+    console.log(`Created setup PR #${pr.number}`);
+    return { url: pr.html_url, direct: false, versions };
+  }
 }

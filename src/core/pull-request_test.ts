@@ -81,3 +81,37 @@ Some footer content`;
   // Footer should be preserved
   assertEquals(updated.includes('Some footer content'), true);
 });
+
+Deno.test('ReleasePullRequest - createVersionsManifest dry run shows correct output', async () => {
+  const pr = new ReleasePullRequest({
+    owner: 'test',
+    repo: 'repo',
+    token: 'test-token',
+    baseBranch: 'main',
+  });
+
+  // Capture console output
+  const logs: string[] = [];
+  const originalLog = console.log;
+  console.log = (msg: string) => logs.push(msg);
+
+  try {
+    // Test dry run with direct=false (PR mode)
+    const result = await pr.createVersionsManifest(false, true);
+
+    assertEquals(result.direct, false);
+    assertEquals(logs.some((l) => l.includes('Would create setup PR')), true);
+    assertEquals(logs.some((l) => l.includes('.pls/versions.json')), true);
+
+    // Reset logs
+    logs.length = 0;
+
+    // Test dry run with direct=true
+    const resultDirect = await pr.createVersionsManifest(true, true);
+
+    assertEquals(resultDirect.direct, true);
+    assertEquals(logs.some((l) => l.includes('Would create .pls/versions.json directly')), true);
+  } finally {
+    console.log = originalLog;
+  }
+});
