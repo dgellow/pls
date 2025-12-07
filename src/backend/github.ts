@@ -54,6 +54,10 @@ export class GitHubBackend implements CommitBackend {
     return this.options.targetBranch || this.options.baseBranch;
   }
 
+  get token(): string {
+    return this.options.token;
+  }
+
   async request<T>(path: string, options: RequestInit = {}): Promise<T> {
     const response = await fetch(`${this.baseUrl}${path}`, {
       ...options,

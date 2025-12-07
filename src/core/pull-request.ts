@@ -11,13 +11,17 @@ import {
 } from './pr-options.ts';
 import { type DebugEntry, generateDebugBlock, parseDebugBlock } from './pr-debug.ts';
 
+/** Factory for creating GitHubBackends with specific target branches */
+export type BackendFactory = (targetBranch: string) => GitHubBackend;
+
 export interface PullRequestOptions {
   owner: string;
   repo: string;
-  token?: string;
   baseBranch?: string;
-  /** Optional backend for dependency injection (useful for testing) */
-  backend?: GitHubBackend;
+  /** Backend for GitHub API operations */
+  backend: GitHubBackend;
+  /** Factory for creating backends for commit operations */
+  createCommitBackend: BackendFactory;
 }
 
 export interface PullRequest {
@@ -34,50 +38,67 @@ interface GitHubPR {
   head: { ref: string };
 }
 
+/**
+ * Factory function to create a ReleasePullRequest with default backends.
+ * Use this for convenience; use the constructor directly for testing.
+ */
+export function createReleasePullRequest(options: {
+  owner: string;
+  repo: string;
+  token?: string;
+  baseBranch?: string;
+}): ReleasePullRequest {
+  const token = options.token || Deno.env.get('GITHUB_TOKEN') || '';
+  if (!token) {
+    throw new PlsError(
+      'GitHub token required for PR creation. Set GITHUB_TOKEN env var or use --token',
+      'GITHUB_AUTH_ERROR',
+    );
+  }
+
+  const { owner, repo } = options;
+  const baseBranch = options.baseBranch || 'main';
+
+  const backend = new GitHubBackend({
+    owner,
+    repo,
+    token,
+    baseBranch,
+    deferBranchUpdate: true,
+  });
+
+  const createCommitBackend: BackendFactory = (targetBranch: string) =>
+    new GitHubBackend({
+      owner,
+      repo,
+      token,
+      baseBranch,
+      targetBranch,
+      deferBranchUpdate: true,
+    });
+
+  return new ReleasePullRequest({
+    owner,
+    repo,
+    baseBranch,
+    backend,
+    createCommitBackend,
+  });
+}
+
 export class ReleasePullRequest {
   private owner: string;
   private repo: string;
-  private token: string;
   private baseBranch: string;
-  /** Cached backend for API requests */
   private backend: GitHubBackend;
+  private createCommitBackend: BackendFactory;
 
   constructor(options: PullRequestOptions) {
     this.owner = options.owner;
     this.repo = options.repo;
-    this.token = options.token || Deno.env.get('GITHUB_TOKEN') || '';
     this.baseBranch = options.baseBranch || 'main';
-
-    if (!this.token) {
-      throw new PlsError(
-        'GitHub token required for PR creation. Set GITHUB_TOKEN env var or use --token',
-        'GITHUB_AUTH_ERROR',
-      );
-    }
-
-    // Use injected backend or create one for API requests
-    this.backend = options.backend ?? new GitHubBackend({
-      owner: this.owner,
-      repo: this.repo,
-      token: this.token,
-      baseBranch: this.baseBranch,
-      deferBranchUpdate: true,
-    });
-  }
-
-  /**
-   * Create a GitHubBackend configured for a specific target branch.
-   * Used for commit operations that need to update a specific branch.
-   */
-  private createCommitBackend(targetBranch: string): GitHubBackend {
-    return new GitHubBackend({
-      owner: this.owner,
-      repo: this.repo,
-      token: this.token,
-      baseBranch: this.baseBranch,
-      targetBranch,
-      deferBranchUpdate: true,
-    });
+    this.backend = options.backend;
+    this.createCommitBackend = options.createCommitBackend;
   }
 
   /**
