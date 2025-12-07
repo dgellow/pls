@@ -92,6 +92,93 @@ We don't scan tags. We look up specific tags based on versions.json.
 
 ---
 
+## Release Tags
+
+pls creates **annotated tags** with structured metadata in the message.
+
+### Tag Message Format
+
+```
+Release v1.2.3
+
+## Changes
+- feat: add new feature
+- fix: resolve bug
+
+---pls-release---
+version: 1.2.3
+from: 1.2.2
+type: minor
+---pls-release---
+```
+
+**Human-readable content above** (changelog, visible in `git show v1.2.3`).
+**Structured metadata below** (machine-parseable, same format as commit messages).
+
+### Why Annotated Tags?
+
+Annotated tags store:
+- Tag name
+- Tagger name & email
+- Timestamp
+- **Message** (arbitrary text, no size limit)
+- Commit SHA it points to
+
+This metadata lets us:
+1. **Verify a tag is a pls release** — check for `---pls-release---` marker
+2. **Extract release info** — parse version, from, type
+3. **Show changelog** — human-readable content in `git show`
+
+### Verifying Release Tags
+
+```typescript
+function isPlsReleaseTag(tagMessage: string): boolean {
+  return tagMessage.includes('---pls-release---');
+}
+
+function parseTagMetadata(tagMessage: string): ReleaseMetadata | null {
+  // Reuse existing parseReleaseMetadata() from release-metadata.ts
+  return parseReleaseMetadata(tagMessage);
+}
+```
+
+### Finding Last Release SHA
+
+```typescript
+async function findLastReleaseSha(version: string): Promise<string | null> {
+  const tag = `v${version}`;
+
+  // 1. Check if tag exists
+  const tagSha = await git.getTagSha(tag);
+  if (!tagSha) {
+    // Fallback: search for version-change commit
+    return await git.findCommitByVersion(version);
+  }
+
+  // 2. Verify it's a pls release tag
+  const message = await git.getTagMessage(tag);
+  if (!isPlsReleaseTag(message)) {
+    // Tag exists but wasn't created by pls — treat as suspicious
+    console.warn(`Tag ${tag} exists but is not a pls release tag`);
+    // Fallback: search for version-change commit
+    return await git.findCommitByVersion(version);
+  }
+
+  // 3. Return the SHA the tag points to
+  return tagSha;
+}
+```
+
+### Consistency with Commit Messages
+
+Same `---pls-release---` delimiter used in:
+- Release commit messages (existing)
+- Release tag messages (new)
+
+Reuse `parseReleaseMetadata()` for both.
+
+---
+
 ## Configuration
 
 ```json
