@@ -116,15 +116,21 @@ export class GitHubStorage implements Storage {
 
   async getLastRelease(): Promise<Release | null> {
     try {
+      // Fetch multiple releases because GitHub's API doesn't guarantee chronological order
+      // and may deprioritize prereleases. We sort client-side to get the truly latest.
       const releases = await this.request<GitHubRelease[]>(
-        `/repos/${this.owner}/${this.repo}/releases?per_page=1`,
+        `/repos/${this.owner}/${this.repo}/releases?per_page=10`,
       );
 
       if (releases.length === 0) {
         return null;
       }
 
-      const latest = releases[0];
+      // Sort by created_at descending to get the most recent release (including prereleases)
+      const sorted = releases.sort((a, b) =>
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      );
+      const latest = sorted[0];
 
       // target_commitish is often just the branch name, not the SHA
       // Look up the actual commit SHA from the tag
