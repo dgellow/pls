@@ -120,13 +120,14 @@ export async function updateVersionFile(
 /**
  * Get the version file path for a package, checking:
  * 1. .pls/versions.json[path].versionFile (cached/configured)
- * 2. Scan for magic comment (and cache if found)
+ * 2. Scan for magic comment (and cache if found, unless dryRun)
  *
  * Returns null if no version file is configured or found.
  */
 export async function resolveVersionFile(
   packagePath: string = '.',
   root: string = Deno.cwd(),
+  dryRun: boolean = false,
 ): Promise<string | null> {
   // 1. Check if already configured in versions.json
   const configured = await getVersionFile(packagePath, root);
@@ -137,8 +138,10 @@ export async function resolveVersionFile(
   // 2. Scan for magic comment
   const found = await scanForVersionFile(root);
   if (found) {
-    // Lock it in to versions.json for future runs
-    await setVersionFile(found, packagePath, root);
+    // Lock it in to versions.json for future runs (skip in dry-run)
+    if (!dryRun) {
+      await setVersionFile(found, packagePath, root);
+    }
     return found;
   }
 

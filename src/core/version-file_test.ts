@@ -222,6 +222,29 @@ export const VERSION = "1.0.0";
   }
 });
 
+Deno.test('resolveVersionFile - does not cache in dry-run mode', async () => {
+  const tempDir = await Deno.makeTempDir();
+  try {
+    await Deno.mkdir(`${tempDir}/src`, { recursive: true });
+    await Deno.writeTextFile(
+      `${tempDir}/src/version_info.ts`,
+      `// @pls-version
+export const VERSION = "1.0.0";
+`,
+    );
+
+    // Call with dryRun=true
+    const result = await resolveVersionFile('.', tempDir, true);
+    assertEquals(result, 'src/version_info.ts');
+
+    // Should NOT be cached in versions.json
+    const cached = await getVersionFile('.', tempDir);
+    assertEquals(cached, null);
+  } finally {
+    await Deno.remove(tempDir, { recursive: true });
+  }
+});
+
 Deno.test('resolveVersionFile - returns null when nothing found', async () => {
   const tempDir = await Deno.makeTempDir();
   try {
