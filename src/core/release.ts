@@ -1,9 +1,10 @@
 import type { Commit, Release, Storage, VersionBump } from '../types.ts';
 import { PlsError } from '../types.ts';
 import { ensureFile } from '@std/fs';
-import { updateAllVersions } from '../manifest/mod.ts';
+import { LocalBackend } from '../backend/mod.ts';
+import { stageReleaseFiles } from './release-files.ts';
+import { generateReleaseCommitMessage } from './release-metadata.ts';
 import { setVersion as setVersionsManifest } from '../versions/mod.ts';
-import { syncVersionFile } from './version-file.ts';
 
 export type TagStrategy = 'github' | 'git';
 
@@ -148,53 +149,14 @@ export class ReleaseManager {
     return lines.join('\n').trim();
   }
 
-  private async updateManifests(version: string, dryRun: boolean): Promise<void> {
-    if (dryRun) {
-      // In dry-run, just detect what would be updated without modifying
-      const { detectWorkspace } = await import('../manifest/factory.ts');
-      const { resolveVersionFile } = await import('./version-file.ts');
-      const workspace = await detectWorkspace();
-      const wouldUpdate: string[] = [];
-
-      if (workspace.root) {
-        wouldUpdate.push(workspace.root.path);
-      }
-      for (const member of workspace.members) {
-        wouldUpdate.push(`${member.path}/${member.manifest.path}`);
-      }
-
-      if (wouldUpdate.length > 0) {
-        console.log(`Would update version in: ${wouldUpdate.join(', ')}`);
-      }
-
-      // Check for version file (pass dryRun=true to avoid caching)
-      const versionFilePath = await resolveVersionFile('.', Deno.cwd(), true);
-      if (versionFilePath) {
-        console.log(`Would update version file: ${versionFilePath}`);
-      }
-
-      console.log(`Would update .pls/versions.json`);
-      return;
-    }
-
-    const result = await updateAllVersions(version);
-
-    if (result.updated.length > 0) {
-      console.log(`Updated version in: ${result.updated.join(', ')}`);
-    }
-
-    for (const error of result.errors) {
-      console.warn(`Warning: Failed to update ${error.path}: ${error.error}`);
-    }
-
-    // Update version file if configured or found
-    const updatedVersionFile = await syncVersionFile(version);
-    if (updatedVersionFile) {
-      console.log(`Updated version file: ${updatedVersionFile}`);
-    }
-
-    // Note: .pls/versions.json is updated after commit with SHA in createRelease
-    console.log(`Updated manifest versions`);
+  /**
+   * Preview what files would be updated (for dry-run).
+   */
+  private async previewUpdates(version: string): Promise<void> {
+    const backend = new LocalBackend(Deno.cwd());
+    const files = await stageReleaseFiles(backend, version);
+    // Note: In dry-run mode, files are staged in memory but never committed
+    console.log(`Would update: ${files.join(', ')}`);
   }
 
   /**
@@ -299,8 +261,8 @@ export class ReleaseManager {
       console.log(`  SHA: ${release.sha}`);
       console.log('');
 
-      // Show what manifests would be updated
-      await this.updateManifests(bump.to, true);
+      // Show what files would be updated
+      await this.previewUpdates(bump.to);
 
       console.log('');
       console.log('Release Notes:');
@@ -309,39 +271,28 @@ export class ReleaseManager {
     }
 
     try {
-      // Update version in manifest files first
-      await this.updateManifests(bump.to, false);
+      // Use LocalBackend + stageReleaseFiles for unified file updates
+      const backend = new LocalBackend(Deno.cwd());
+      const files = await stageReleaseFiles(backend, bump.to);
 
-      // Commit manifest changes
-      const addCommand = new Deno.Command('git', {
-        args: ['add', '-A'],
+      // Commit with structured release message
+      const commitMessage = generateReleaseCommitMessage({
+        version: bump.to,
+        from: bump.from,
+        type: bump.type,
       });
-      await addCommand.output();
+      release.sha = await backend.commit(commitMessage);
 
-      const commitCommand = new Deno.Command('git', {
-        args: ['commit', '-m', `chore: release ${tag}`, '--allow-empty'],
-      });
-      await commitCommand.output();
+      console.log(`Updated: ${files.join(', ')}`);
 
-      // Get the new commit SHA (after release commit)
-      const shaCommand = new Deno.Command('git', {
-        args: ['rev-parse', 'HEAD'],
-      });
-      const shaResult = await shaCommand.output();
-      if (shaResult.code === 0) {
-        release.sha = new TextDecoder().decode(shaResult.stdout).trim();
-      }
-
-      // Update .pls/versions.json with version AND SHA, then amend commit
+      // Update .pls/versions.json with SHA (chicken-egg: requires amend)
       await setVersionsManifest(bump.to, '.', Deno.cwd(), release.sha);
-      console.log(`Updated .pls/versions.json`);
-
       await new Deno.Command('git', { args: ['add', '.pls/versions.json'] }).output();
       await new Deno.Command('git', {
         args: ['commit', '--amend', '--no-edit'],
       }).output();
 
-      // Update SHA again after amend
+      // Get final SHA after amend
       const amendedShaResult = await new Deno.Command('git', {
         args: ['rev-parse', 'HEAD'],
       }).output();

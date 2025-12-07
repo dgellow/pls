@@ -148,6 +148,49 @@ async function getWorkspaceMembers(backend: CommitBackend): Promise<string[]> {
   }
 }
 
+/** Entry in versions.json - strips SHA but preserves versionFile */
+type VersionEntry = string | { version: string; versionFile?: string };
+
+/**
+ * Parse versions.json, preserving versionFile but stripping SHA.
+ * SHA becomes stale after merge and is set fresh after each commit.
+ */
+function parseVersionsJson(content: string): Record<string, VersionEntry> {
+  const parsed = JSON.parse(content);
+  const result: Record<string, VersionEntry> = {};
+
+  for (const [key, value] of Object.entries(parsed)) {
+    if (typeof value === 'object' && value !== null) {
+      const entry = value as { version: string; sha?: string; versionFile?: string };
+      if (entry.versionFile) {
+        result[key] = { version: entry.version, versionFile: entry.versionFile };
+      } else {
+        result[key] = entry.version;
+      }
+    } else {
+      result[key] = value as string;
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Update version in entry, preserving versionFile if present.
+ */
+function updateVersionEntry(
+  versions: Record<string, VersionEntry>,
+  path: string,
+  newVersion: string,
+): void {
+  const entry = versions[path];
+  if (typeof entry === 'object' && entry.versionFile) {
+    versions[path] = { version: newVersion, versionFile: entry.versionFile };
+  } else {
+    versions[path] = newVersion;
+  }
+}
+
 /**
  * Update .pls/versions.json with new version for all packages.
  */
@@ -156,40 +199,24 @@ async function updateVersionsManifest(
   version: string,
   workspaceMembers: string[],
 ): Promise<void> {
-  let versions: Record<string, unknown> = {};
+  let versions: Record<string, VersionEntry> = {};
 
-  // Read existing versions.json
+  // Read existing versions.json (strips SHA, preserves versionFile)
   const content = await backend.read('.pls/versions.json');
   if (content) {
     try {
-      const parsed = JSON.parse(content);
-      // Preserve existing fields (like versionFile) but update version
-      for (const [key, value] of Object.entries(parsed)) {
-        if (typeof value === 'object' && value !== null) {
-          versions[key] = { ...value as object, version };
-        } else {
-          versions[key] = version;
-        }
-      }
+      versions = parseVersionsJson(content);
     } catch {
       // Invalid JSON, start fresh
     }
   }
 
-  // Update root version (preserving versionFile if present)
-  if (typeof versions['.'] === 'object' && versions['.'] !== null) {
-    (versions['.'] as Record<string, unknown>).version = version;
-  } else {
-    versions['.'] = version;
-  }
+  // Update root version
+  updateVersionEntry(versions, '.', version);
 
   // Update workspace members
   for (const memberPath of workspaceMembers) {
-    if (typeof versions[memberPath] === 'object' && versions[memberPath] !== null) {
-      (versions[memberPath] as Record<string, unknown>).version = version;
-    } else {
-      versions[memberPath] = version;
-    }
+    updateVersionEntry(versions, memberPath, version);
   }
 
   await backend.write('.pls/versions.json', JSON.stringify(versions, null, 2) + '\n');
