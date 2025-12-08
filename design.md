@@ -142,10 +142,10 @@ When `versionFile` is set, pls scans for `// @pls-version` and updates the `VERS
 **Solution:** Don't store SHA. Derive it from tags.
 
 ```
-versions.json: { "version": "1.2.3" }
-                      │
-                      ▼
-         Look up tag v1.2.3 → get SHA
+versions.json: { ".": { "version": "1.2.3" } }
+                              │
+                              ▼
+               Look up tag v1.2.3 → get SHA
 ```
 
 - **versions.json** = source of truth for "what is current version"
@@ -335,9 +335,9 @@ Creates:
 ```json
 // .pls/versions.json
 {
-  ".": "1.0.0",
-  "packages/cli": "1.0.0",
-  "packages/core": "1.0.0"
+  ".": { "version": "1.0.0" },
+  "packages/cli": { "version": "1.0.0" },
+  "packages/core": { "version": "1.0.0" }
 }
 ```
 
@@ -939,10 +939,12 @@ PR body contains selectable version options:
 <summary>Version Selection</summary>
 
 <!-- pls:options -->
-- [ ] 2.0.0 (major - breaking changes)
-- [x] 1.3.0 (minor - new features) ← selected
-- [ ] 1.2.4 (patch - bug fixes only)
-- [ ] 1.3.0-beta.1 (prerelease)
+**Current: 1.3.0** (minor) <!-- pls:v:1.3.0:minor:current -->
+
+Switch to:
+- [ ] 2.0.0 (major) <!-- pls:v:2.0.0:major -->
+- [ ] 1.2.4 (patch) <!-- pls:v:1.2.4:patch -->
+- [ ] 1.3.0-beta.1 (beta) <!-- pls:v:1.3.0-beta.1:transition -->
 <!-- pls:options:end -->
 
 </details>
