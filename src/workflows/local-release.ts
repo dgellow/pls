@@ -186,10 +186,11 @@ export async function transitionWorkflow(
   // 2. Calculate transition
   const { from, to } = calculateTransition(currentVersion, target, bumpType);
 
+  // VersionBump requires major/minor/patch type - use the requested bumpType
   const bump: VersionBump = {
     from,
     to,
-    type: 'patch', // Transitions are always "transition" type semantically
+    type: bumpType,
     commits: [],
   };
 

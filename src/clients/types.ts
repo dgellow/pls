@@ -47,6 +47,7 @@ export interface GitHubClient {
   pointBranch(branch: string, sha: string, force?: boolean): Promise<void>;
   createBranch(branch: string, sha: string): Promise<void>;
   branchExists(branch: string): Promise<boolean>;
+  ensureBranch(branch: string, sha: string): Promise<void>;
 
   // Tag operations
   createTag(name: string, sha: string, message: string): Promise<void>;
