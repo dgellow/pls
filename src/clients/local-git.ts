@@ -189,4 +189,50 @@ export class LocalGit implements GitClient {
 
     return null;
   }
+
+  // --- Branch Sync Operations (Strategy B) ---
+
+  /**
+   * Fetch from remote.
+   */
+  async fetch(remote = 'origin'): Promise<void> {
+    await this.exec(['fetch', remote]);
+  }
+
+  /**
+   * Checkout and reset branch to a remote ref.
+   */
+  async checkoutBranch(branch: string, fromRef: string): Promise<void> {
+    await this.exec(['checkout', '-B', branch, fromRef]);
+  }
+
+  /**
+   * Rebase current branch onto another branch.
+   * Returns true on success, false on failure.
+   */
+  async rebase(onto: string): Promise<boolean> {
+    const result = await this.execSafe(['rebase', onto]);
+    if (result === null) {
+      // Rebase failed - abort
+      await this.execSafe(['rebase', '--abort']);
+      return false;
+    }
+    return true;
+  }
+
+  /**
+   * Push with force-with-lease (safe force push).
+   * Returns true on success, false on failure.
+   */
+  async pushForceWithLease(remote: string, branch: string): Promise<boolean> {
+    const result = await this.execSafe(['push', '--force-with-lease', remote, branch]);
+    return result !== null;
+  }
+
+  /**
+   * Get current branch name.
+   */
+  async getCurrentBranch(): Promise<string> {
+    return await this.exec(['rev-parse', '--abbrev-ref', 'HEAD']);
+  }
 }

@@ -54,6 +54,7 @@ export interface GitHubClient {
 
   // PR operations
   findPR(headBranch: string): Promise<PullRequest | null>;
+  findMergedPR(headBranch: string): Promise<PullRequest | null>;
   getPR(number: number): Promise<PullRequest>;
   createPR(options: CreatePROptions): Promise<PullRequest>;
   updatePR(number: number, options: UpdatePROptions): Promise<void>;

@@ -5,6 +5,7 @@
  *
  * Commands:
  *   pls              Local release (dry-run by default)
+ *   pls init         Bootstrap pls for a new repository
  *   pls prep         Prepare release PR
  *   pls sync         Sync PR after selection change
  *   pls release      Create tag and GitHub Release
@@ -12,6 +13,7 @@
  */
 
 import { parseArgs } from '@std/cli/parse-args';
+import { init } from './init.ts';
 import { prep } from './prep.ts';
 import { sync } from './sync.ts';
 import { release } from './release.ts';
@@ -26,6 +28,7 @@ ${output.bold('pls')} - Release automation tool
 
 ${output.bold('USAGE:')}
   pls [OPTIONS]              Local release
+  pls init [OPTIONS]         Bootstrap pls for a new repository
   pls prep [OPTIONS]         Prepare release PR
   pls sync [OPTIONS]         Sync PR after selection change
   pls release [OPTIONS]      Create tag and GitHub Release
@@ -41,6 +44,7 @@ ${output.bold('TRANSITION TARGETS:')}
   alpha, beta, rc, stable
 
 ${output.bold('EXAMPLES:')}
+  pls init --execute         # Initialize pls
   pls                        # Dry run local release
   pls --execute              # Create local release
   pls prep --execute         # Create release PR
@@ -51,6 +55,11 @@ async function main(): Promise<void> {
   const args = Deno.args;
 
   // Route to subcommands
+  if (args[0] === 'init') {
+    await init(args.slice(1));
+    return;
+  }
+
   if (args[0] === 'prep') {
     await prep(args.slice(1));
     return;

@@ -291,13 +291,15 @@ export class GitHub implements GitHubClient {
   // --- PR Operations ---
 
   async findPR(headBranch: string): Promise<PullRequest | null> {
-    const prs = await this.request<Array<{
-      number: number;
-      title: string;
-      body: string;
-      head: { ref: string };
-      html_url: string;
-    }>>(
+    const prs = await this.request<
+      Array<{
+        number: number;
+        title: string;
+        body: string;
+        head: { ref: string };
+        html_url: string;
+      }>
+    >(
       `/repos/${this.owner}/${this.repo}/pulls?head=${this.owner}:${headBranch}&state=open`,
     );
 
@@ -310,6 +312,34 @@ export class GitHub implements GitHubClient {
       body: pr.body || '',
       branch: pr.head.ref,
       url: pr.html_url,
+    };
+  }
+
+  async findMergedPR(headBranch: string): Promise<PullRequest | null> {
+    // Search for recently merged PRs from this branch
+    const prs = await this.request<
+      Array<{
+        number: number;
+        title: string;
+        body: string;
+        head: { ref: string };
+        html_url: string;
+        merged_at: string | null;
+      }>
+    >(
+      `/repos/${this.owner}/${this.repo}/pulls?head=${this.owner}:${headBranch}&state=closed&sort=updated&direction=desc`,
+    );
+
+    // Find the first one that was actually merged
+    const merged = prs.find((pr) => pr.merged_at !== null);
+    if (!merged) return null;
+
+    return {
+      number: merged.number,
+      title: merged.title,
+      body: merged.body || '',
+      branch: merged.head.ref,
+      url: merged.html_url,
     };
   }
 

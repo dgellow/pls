@@ -65,9 +65,7 @@ export function generateOptions(
     // Future stages (enabled)
     for (let i = currentIndex + 1; i < stageOrder.length; i++) {
       const stage = stageOrder[i];
-      const targetVersion = stage === 'stable'
-        ? baseVersion
-        : `${baseVersion}-${stage}.0`;
+      const targetVersion = stage === 'stable' ? baseVersion : `${baseVersion}-${stage}.0`;
 
       if (targetVersion !== bump.to) {
         options.push({
@@ -123,7 +121,9 @@ export function generateOptionsBlock(options: VersionOption[]): string {
     for (const opt of alternatives) {
       if (opt.disabled) {
         lines.push(
-          `- [ ] ~~${opt.version}~~ (${opt.label}) <!-- pls:v:${opt.version}:${opt.type}:disabled:${opt.disabledReason || 'unavailable'} -->`,
+          `- [ ] ~~${opt.version}~~ (${opt.label}) <!-- pls:v:${opt.version}:${opt.type}:disabled:${
+            opt.disabledReason || 'unavailable'
+          } -->`,
         );
       } else {
         lines.push(

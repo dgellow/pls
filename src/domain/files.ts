@@ -106,7 +106,7 @@ export function updateVersionsManifest(
   content: string | null,
   version: string,
 ): string {
-  let manifest: VersionsManifest = {};
+  const manifest: VersionsManifest = {};
 
   if (content) {
     try {
