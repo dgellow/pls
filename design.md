@@ -2,7 +2,8 @@
 
 ## Mission
 
-Automate semantic versioning releases. Read git history, calculate versions, update files, create releases.
+Automate semantic versioning releases. Read git history, calculate versions, update files, create
+releases.
 
 ---
 
@@ -61,11 +62,13 @@ async function syncNextBranch(maxRetries = 3): Promise<void> {
 ```
 
 **Why force-with-lease?**
+
 - Safe: fails if remote has commits we don't know about
 - Rebase replays any new commits on `next` automatically
 - Retry handles race condition if someone pushes during sync
 
-**Failure mode:** If sync fails after retries (constant activity on `next`), release still succeeds. Branch sync is best-effort; user can sync manually.
+**Failure mode:** If sync fails after retries (constant activity on `next`), release still succeeds.
+Branch sync is best-effort; user can sync manually.
 
 ---
 
@@ -73,12 +76,12 @@ async function syncNextBranch(maxRetries = 3): Promise<void> {
 
 **No webhooks.** Everything is CLI or CI.
 
-| Workflow | Trigger | Runner |
-|----------|---------|--------|
-| `pls prep` | Manual, or CI on push to baseBranch | Developer CLI or CI |
-| `pls sync` | CI on `pull_request.edited` event | CI only |
-| `pls release` | CI on **every push to targetBranch** | CI only |
-| `pls` (local) | Manual | Developer CLI |
+| Workflow      | Trigger                              | Runner              |
+| ------------- | ------------------------------------ | ------------------- |
+| `pls prep`    | Manual, or CI on push to baseBranch  | Developer CLI or CI |
+| `pls sync`    | CI on `pull_request.edited` event    | CI only             |
+| `pls release` | CI on **every push to targetBranch** | CI only             |
+| `pls` (local) | Manual                               | Developer CLI       |
 
 ### Self-Healing via Continuous Release
 
@@ -103,13 +106,13 @@ No special recovery logic. The normal path handles failures.
 
 ## Manifests
 
-| File | Content | Updated By | When |
-|------|---------|------------|------|
-| `deno.json` | `{ "version": "1.2.3" }` | pls prep | In release PR |
-| `.pls/versions.json` | `{ ".": { "version": "1.2.3" } }` | pls prep | In release PR |
-| `CHANGELOG.md` | Release notes | pls prep | In release PR |
-| `src/version.ts` | `export const VERSION = "1.2.3"` | pls prep | In release PR (optional) |
-| `.pls/config.json` | Configuration | Developer | Manual |
+| File                 | Content                           | Updated By | When                     |
+| -------------------- | --------------------------------- | ---------- | ------------------------ |
+| `deno.json`          | `{ "version": "1.2.3" }`          | pls prep   | In release PR            |
+| `.pls/versions.json` | `{ ".": { "version": "1.2.3" } }` | pls prep   | In release PR            |
+| `CHANGELOG.md`       | Release notes                     | pls prep   | In release PR            |
+| `src/version.ts`     | `export const VERSION = "1.2.3"`  | pls prep   | In release PR (optional) |
+| `.pls/config.json`   | Configuration                     | Developer  | Manual                   |
 
 ### TypeScript Version File
 
@@ -124,6 +127,7 @@ export const VERSION = '1.2.3';
 **The magic comment `// @pls-version`** tells pls to update this file during releases.
 
 **Configuration in versions.json:**
+
 ```json
 {
   ".": {
@@ -137,7 +141,8 @@ When `versionFile` is set, pls scans for `// @pls-version` and updates the `VERS
 
 ### No SHA in versions.json
 
-**The chicken-egg problem:** We can't know the final SHA until after merge (squash/rebase create new SHAs).
+**The chicken-egg problem:** We can't know the final SHA until after merge (squash/rebase create new
+SHAs).
 
 **Solution:** Don't store SHA. Derive it from tags.
 
@@ -187,12 +192,13 @@ type: minor
 ---pls-release---
 ```
 
-**Human-readable content above** (changelog, visible in `git show v1.2.3`).
-**Structured metadata below** (machine-parseable, same format as commit messages).
+**Human-readable content above** (changelog, visible in `git show v1.2.3`). **Structured metadata
+below** (machine-parseable, same format as commit messages).
 
 ### Why Annotated Tags?
 
 Annotated tags store:
+
 - Tag name
 - Tagger name & email
 - Timestamp
@@ -200,6 +206,7 @@ Annotated tags store:
 - Commit SHA it points to
 
 This metadata lets us:
+
 1. **Verify a tag is a pls release** — check for `---pls-release---` marker
 2. **Extract release info** — parse version, from, type
 3. **Show changelog** — human-readable content in `git show`
@@ -260,6 +267,7 @@ async function findCommitByVersion(version: string): Promise<string | null> {
 ```
 
 **Why fallback instead of error?**
+
 - Tag missing = previous `pls release` failed
 - But `pls prep` can still work with fallback SHA
 - `pls release` on next push will create the missing tag
@@ -268,6 +276,7 @@ async function findCommitByVersion(version: string): Promise<string | null> {
 ### Consistency with Commit Messages
 
 Same `---pls-release---` delimiter used in:
+
 - Release commit messages (existing)
 - Release tag messages (new)
 
@@ -280,8 +289,8 @@ Reuse `parseReleaseMetadata()` for both.
 ```json
 // .pls/config.json (optional - convention over configuration)
 {
-  "baseBranch": "next",           // where commits land (default: main)
-  "targetBranch": "main",         // where releases merge to (default: main)
+  "baseBranch": "next", // where commits land (default: main)
+  "targetBranch": "main", // where releases merge to (default: main)
   "releaseBranch": "pls-release", // PR branch name
   "versionFile": "src/version.ts" // optional TypeScript version file
 }
@@ -317,12 +326,13 @@ Next steps:
 ```
 
 **Detection order:**
+
 1. `deno.json` → `{ "version": "x.y.z" }`
 2. `package.json` → `{ "version": "x.y.z" }`
 3. Prompt user for initial version
 
-**Workspace detection:** If root manifest has a `workspace` field, pls scans
-workspace members and extracts their versions too:
+**Workspace detection:** If root manifest has a `workspace` field, pls scans workspace members and
+extracts their versions too:
 
 ```json
 // deno.json
@@ -332,6 +342,7 @@ workspace members and extracts their versions too:
 ```
 
 Creates:
+
 ```json
 // .pls/versions.json
 {
@@ -342,6 +353,7 @@ Creates:
 ```
 
 **What it creates:**
+
 - `.pls/versions.json` with detected version(s)
 - Annotated tag `v{version}` pointing to HEAD
 - Optionally: `.pls/config.json` if non-default settings needed
@@ -374,11 +386,13 @@ Merge this PR to initialize pls, then releases will work automatically.
 ## The Two Worlds
 
 **Local execution**: Developer runs `pls` in terminal.
+
 - Read: filesystem
 - Write: filesystem → git commit → git tag
 - History: git log
 
 **Remote execution**: CI runs `pls prep`, `pls sync`, `pls release`.
+
 - Read: GitHub Contents API (or local git for history)
 - Write: staged in memory → Git Data API (tree → commit → ref)
 - History: local git
@@ -389,15 +403,15 @@ Merge this PR to initialize pls, then releases will work automatically.
 
 ## Core Operations
 
-| Operation | Type | Description |
-|-----------|------|-------------|
-| Detect | Pure | What commits since last release? |
-| Calculate | Pure | What's the new version? |
-| Build | Pure | What files change, with what content? |
-| Commit | I/O | Create commit with changes |
-| Point | I/O | Update branch/tag to commit |
-| Release | I/O | Create GitHub Release (optional) |
-| PR | I/O | Create/update pull request |
+| Operation | Type | Description                           |
+| --------- | ---- | ------------------------------------- |
+| Detect    | Pure | What commits since last release?      |
+| Calculate | Pure | What's the new version?               |
+| Build     | Pure | What files change, with what content? |
+| Commit    | I/O  | Create commit with changes            |
+| Point     | I/O  | Update branch/tag to commit           |
+| Release   | I/O  | Create GitHub Release (optional)      |
+| PR        | I/O  | Create/update pull request            |
 
 ---
 
@@ -463,7 +477,7 @@ await backend.commit(msg);
 // Right: branch is operation parameter (no factory)
 const sha = await client.commit(files, msg);
 await client.pointBranch('pls-release', sha);
-await client.pointBranch('other-branch', sha);  // Same commit!
+await client.pointBranch('other-branch', sha); // Same commit!
 ```
 
 ### 2. SHA derived from tags, not stored
@@ -476,11 +490,13 @@ await client.pointBranch('other-branch', sha);  // Same commit!
 ### 3. Platform capabilities vs pls domain
 
 **Platform capabilities** (GitHubClient):
+
 - readFile, commit, pointBranch, createTag
 - findPR, createPR, updatePR
 - createGitHubRelease (optional enhancement)
 
 **pls domain** (workflows + domain services):
+
 - "What's the current version?" → read versions.json
 - "What SHA is that version?" → look up tag
 - "What files need to change?" → pure logic
@@ -572,6 +588,7 @@ interface GitHubClient {
 ```
 
 **UX - Dry run:**
+
 ```
 $ pls prep
 
@@ -599,6 +616,7 @@ DRY RUN — use --execute to create PR
 ```
 
 **UX - Execute:**
+
 ```
 $ pls prep --execute
 
@@ -649,6 +667,7 @@ Next steps:
 ```
 
 **UX:**
+
 ```
 $ pls sync --pr=42
 
@@ -665,6 +684,7 @@ Updating PR... ✓
 ```
 
 **How it knows PR number:**
+
 - CI: From event payload (`github.event.pull_request.number`)
 - CLI: `--pr=42` or auto-detect (find open PR from pls-release branch)
 
@@ -713,15 +733,17 @@ Updating PR... ✓
 ```
 
 **Key behaviors:**
+
 - **Idempotent:** If already released, exits successfully (not error)
 - **Self-healing:** Finds and creates missing tag even if original CI failed
 - **Concurrent-safe:** "Tag already exists" → treat as success
-- **Release commit detection:** Checks if HEAD is a release commit (has `---pls-release---` metadata)
+- **Release commit detection:** Checks if HEAD is a release commit (has `---pls-release---`
+  metadata)
 
 ### Release Commit Detection
 
-When a release PR is merged, the merge commit contains our structured metadata.
-`pls release` detects this and creates the tag without recalculating version:
+When a release PR is merged, the merge commit contains our structured metadata. `pls release`
+detects this and creates the tag without recalculating version:
 
 ```typescript
 const commitMessage = await git.getCommitMessage('HEAD');
@@ -737,12 +759,12 @@ if (metadata) {
 }
 ```
 
-This prevents double-bumping: if someone merges the release PR and then
-pushes an unrelated commit, `pls release` on the second push won't
-recalculate the version—it reads from versions.json and finds the tag
-already exists.
+This prevents double-bumping: if someone merges the release PR and then pushes an unrelated commit,
+`pls release` on the second push won't recalculate the version—it reads from versions.json and finds
+the tag already exists.
 
 **UX - Already released:**
+
 ```
 $ pls release
 
@@ -756,6 +778,7 @@ Already released. Nothing to do.
 ```
 
 **UX - Creating release:**
+
 ```
 $ pls release
 
@@ -773,6 +796,7 @@ Creating GitHub Release... ✓
 ```
 
 **UX - Self-healing (previous failure):**
+
 ```
 $ pls release
 
@@ -869,7 +893,7 @@ Developer                    GitHub                     CI
 name: Prepare Release
 on:
   push:
-    branches: [next]  # or [main] for simple strategy
+    branches: [next] # or [main] for simple strategy
 
 jobs:
   prep:
@@ -877,7 +901,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Full history for commit detection
+          fetch-depth: 0 # Full history for commit detection
       - run: pls prep --execute
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -909,7 +933,7 @@ jobs:
 name: Create Release
 on:
   push:
-    branches: [main]  # Every push, not just PR merges
+    branches: [main] # Every push, not just PR merges
 
 jobs:
   release:
@@ -921,8 +945,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```
 
-**Why every push?** Self-healing. If tag creation fails once, next push fixes it.
-Most runs will be no-ops ("Already released"), which is cheap and fast.
+**Why every push?** Self-healing. If tag creation fails once, next push fixes it. Most runs will be
+no-ops ("Already released"), which is cheap and fast.
 
 ---
 
@@ -939,23 +963,28 @@ PR body contains selectable version options:
 <summary>Version Selection</summary>
 
 <!-- pls:options -->
+
 **Current: 1.3.0** (minor) <!-- pls:v:1.3.0:minor:current -->
 
 Switch to:
+
 - [ ] 2.0.0 (major) <!-- pls:v:2.0.0:major -->
 - [ ] 1.2.4 (patch) <!-- pls:v:1.2.4:patch -->
 - [ ] 1.3.0-beta.1 (beta) <!-- pls:v:1.3.0-beta.1:transition -->
+
 <!-- pls:options:end -->
 
 </details>
 ```
 
 **UI Details:**
+
 - **Current selection** shown as text (no checkbox) to avoid double-click issues
 - **Alternatives** have checkboxes - checking one triggers sync workflow
 - **Disabled options** are struck through (e.g., can't go back from beta to alpha)
 
 **HTML markers for parsing:**
+
 ```
 <!-- pls:v:1.3.0:minor:current -->     ← Current selection
 <!-- pls:v:1.3.0-alpha.0:transition --> ← Alternative option
@@ -990,12 +1019,12 @@ pls supports prerelease workflows via the `pls transition` command.
 
 ### Transition Targets
 
-| Target | Description |
-|--------|-------------|
-| `alpha` | Early development, unstable |
-| `beta` | Feature complete, testing |
-| `rc` | Release candidate, final testing |
-| `stable` | Production release |
+| Target   | Description                      |
+| -------- | -------------------------------- |
+| `alpha`  | Early development, unstable      |
+| `beta`   | Feature complete, testing        |
+| `rc`     | Release candidate, final testing |
+| `stable` | Production release               |
 
 ### Version Flow
 
@@ -1016,21 +1045,25 @@ Within prerelease (normal releases):
 ### Key Behaviors
 
 **Starting a prerelease cycle:**
+
 - Bumps version first (default: minor)
 - Adds prerelease suffix: `1.3.0-alpha.0`
 - `--major` / `--minor` / `--patch` control the bump
 
 **During prerelease:**
+
 - Normal `pls prep` increments build number: `alpha.0` → `alpha.1`
 - Conventional commits don't affect version (already in prerelease)
 
 **Graduating to stable:**
+
 - `pls transition stable` strips the prerelease suffix
 - `1.3.0-rc.2` → `1.3.0`
 
 ### Tags and Releases
 
 Prereleases get tags and GitHub Releases just like stable versions:
+
 - Tag: `v1.3.0-alpha.0`
 - GitHub Release: marked as "pre-release"
 
@@ -1040,84 +1073,95 @@ Prereleases get tags and GitHub Releases just like stable versions:
 
 ### Idempotency Matrix
 
-| Operation | Idempotent | On Retry |
-|-----------|------------|----------|
-| Read files | ✅ Yes | Same result |
-| Read commits | ✅ Yes | Same result |
-| Compute version/files | ✅ Yes | Same result |
-| Create commit | ❌ No | New commit (safe, old orphaned) |
-| Update branch ref | ✅ Yes | Same SHA = no-op |
-| Create PR | ✅ Yes | If exists → update instead |
-| Update PR | ✅ Yes | Same content = no-op |
-| Create tag | ✅ Yes | If exists → skip |
-| Create GitHub Release | ✅ Yes | If exists → skip |
+| Operation             | Idempotent | On Retry                        |
+| --------------------- | ---------- | ------------------------------- |
+| Read files            | ✅ Yes     | Same result                     |
+| Read commits          | ✅ Yes     | Same result                     |
+| Compute version/files | ✅ Yes     | Same result                     |
+| Create commit         | ❌ No      | New commit (safe, old orphaned) |
+| Update branch ref     | ✅ Yes     | Same SHA = no-op                |
+| Create PR             | ✅ Yes     | If exists → update instead      |
+| Update PR             | ✅ Yes     | Same content = no-op            |
+| Create tag            | ✅ Yes     | If exists → skip                |
+| Create GitHub Release | ✅ Yes     | If exists → skip                |
 
 ### Failure Scenarios
 
 **Scenario 1: GitHub fails mid-commit creation**
+
 ```
 Create blob ✓
 Create tree ✓
 Create commit ✗ (network error)
 ```
+
 → Retry. Orphaned blobs/trees are harmless (GitHub GCs them).
 
 **Scenario 2: Commit created but branch not updated**
+
 ```
 Create commit ✓ (sha: xyz789)
 Update branch ✗ (network error)
 ```
+
 → Retry `pls prep`. New commit created, branch updated. Old commit orphaned (harmless).
 
 **Scenario 3: Branch updated but PR not created**
+
 ```
 Update branch ✓
 Create PR ✗ (network error)
 ```
+
 → Retry `pls prep`. Finds no PR, creates it. Branch already correct.
 
 **Scenario 4: PR merged but tag not created**
+
 ```
 PR merged ✓
 Create tag ✗ (network error)
 ```
-→ **Self-heals on next push.** `pls release` runs on every push to main.
-→ Next unrelated commit triggers CI → tag created automatically.
-→ Or: manual `pls release --execute` also works.
+
+→ **Self-heals on next push.** `pls release` runs on every push to main. → Next unrelated commit
+triggers CI → tag created automatically. → Or: manual `pls release --execute` also works.
 
 **Scenario 5: Tag created but GitHub Release not created**
+
 ```
 Create tag ✓
 Create release ✗ (network error)
 ```
+
 → **Self-heals on next push.** Tag exists (skip), release created.
 
 **Scenario 6: Concurrent `pls release` runs**
+
 ```
 Job A: Check tag → missing
 Job B: Check tag → missing
 Job A: Create tag ✓
 Job B: Create tag → "already exists"
 ```
+
 → Job B treats "already exists" as success, not error.
 
-**All failures are recoverable automatically via self-healing.**
-**No manual intervention required for transient failures.**
+**All failures are recoverable automatically via self-healing.** **No manual intervention required
+for transient failures.**
 
 ---
 
 ## What Dies (Current → Target)
 
-| Current Abstraction | Fate |
-|---------------------|------|
-| `Storage` interface | Gone. Version from versions.json, SHA from tag. |
-| `Manifest` classes | Absorbed into `buildReleaseFiles`. Just JSON parsing. |
-| `versions/mod.ts` | Absorbed into domain services. |
-| `FileBackend` / `CommitBackend` | Replaced by `LocalGit` / `GitHubClient`. |
-| Backend factories | Gone. Branch is a parameter. |
-| `ReleasePullRequest` | Split into workflows + `GitHubClient`. |
-| `ReleaseManager` | Split into workflows + domain services. |
-| SHA in versions.json | Gone. Derived from tags. |
+| Current Abstraction             | Fate                                                  |
+| ------------------------------- | ----------------------------------------------------- |
+| `Storage` interface             | Gone. Version from versions.json, SHA from tag.       |
+| `Manifest` classes              | Absorbed into `buildReleaseFiles`. Just JSON parsing. |
+| `versions/mod.ts`               | Absorbed into domain services.                        |
+| `FileBackend` / `CommitBackend` | Replaced by `LocalGit` / `GitHubClient`.              |
+| Backend factories               | Gone. Branch is a parameter.                          |
+| `ReleasePullRequest`            | Split into workflows + `GitHubClient`.                |
+| `ReleaseManager`                | Split into workflows + domain services.               |
+| SHA in versions.json            | Gone. Derived from tags.                              |
 
 ---
 
@@ -1161,29 +1205,35 @@ src/
 ## Refactoring Path
 
 ### Phase 1: Fix Branch Parameter
+
 - Change `GitHubBackend.updateBranchRef` to take branch as parameter
 - Eliminates factory pattern immediately
 
 ### Phase 2: Extract GitHubClient
+
 - Move PR operations from `ReleasePullRequest` into `GitHubClient`
 - Single client for all GitHub operations
 
 ### Phase 3: Pure Domain Services
+
 - Extract `buildReleaseFiles` as pure function
 - Extract `calculateBump`, `generateChangelog` as pure functions
 - Move file-building logic out of backends
 
 ### Phase 4: Workflow Separation
+
 - Create `PRCreateWorkflow`, `PRSyncWorkflow`, `PRReleaseWorkflow`, `LocalReleaseWorkflow`
 - Thin orchestration layer
 - Delete `ReleaseManager`, `ReleasePullRequest` classes
 
 ### Phase 5: Remove SHA from versions.json
+
 - Update versions.json schema (version only)
 - Add tag lookup for SHA
 - Add fallback commit search
 
 ### Phase 6: Cleanup
+
 - Delete `Storage` interface
 - Delete `Manifest` classes
 - Delete `versions/mod.ts`
@@ -1211,11 +1261,11 @@ Each key is a path relative to repo root. `.` is the root package.
 
 Following npm/Lerna conventions:
 
-| Package | Tag Format | Example |
-|---------|------------|---------|
-| Root (`.`) | `v{version}` | `v1.2.3` |
-| Scoped | `{name}@{version}` | `@myorg/cli@2.0.0` |
-| Unscoped | `{name}@{version}` | `core@1.5.0` |
+| Package    | Tag Format         | Example            |
+| ---------- | ------------------ | ------------------ |
+| Root (`.`) | `v{version}`       | `v1.2.3`           |
+| Scoped     | `{name}@{version}` | `@myorg/cli@2.0.0` |
+| Unscoped   | `{name}@{version}` | `core@1.5.0`       |
 
 The `@` style matches npm's `package@version` syntax and is widely recognized.
 
@@ -1223,12 +1273,12 @@ The `@` style matches npm's `package@version` syntax and is widely recognized.
 
 **Independent (default):** Each package has its own version, released separately.
 
-**Fixed:** All packages share one version. Changes to any package bump all.
-Could be configured in `.pls/config.json`:
+**Fixed:** All packages share one version. Changes to any package bump all. Could be configured in
+`.pls/config.json`:
 
 ```json
 {
-  "versioning": "fixed"  // or "independent" (default)
+  "versioning": "fixed" // or "independent" (default)
 }
 ```
 
@@ -1239,13 +1289,13 @@ For independent versioning, detect which packages changed:
 ```typescript
 // Get commits that touched files in package path
 const commits = await git.getCommitsSince(sha, {
-  paths: ['packages/cli/**']
+  paths: ['packages/cli/**'],
 });
 ```
 
 ### Trade-off: Tag Explosion
 
-With many packages and frequent releases, tags can explode (thousands).
-Some teams prefer combined snapshot tags: `v2024.01.15`.
+With many packages and frequent releases, tags can explode (thousands). Some teams prefer combined
+snapshot tags: `v2024.01.15`.
 
 For MVP: single-package support only. Monorepo is a future enhancement.

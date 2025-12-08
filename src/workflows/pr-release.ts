@@ -3,11 +3,14 @@
  *
  * Creates tag and GitHub Release after PR merge.
  * Runs on every push to targetBranch for self-healing.
+ *
+ * For Strategy B (next branch): syncs base branch onto target after release.
  */
 
 import type { GitHub } from '../clients/github.ts';
 import type { LocalGit } from '../clients/local-git.ts';
 import type { VersionsManifest } from '../domain/types.ts';
+import type { PlsConfig } from '../domain/config.ts';
 import { parseReleaseMetadata } from '../domain/release-metadata.ts';
 import { generateReleaseTagMessage } from '../domain/release-metadata.ts';
 import { generateCommitList } from '../domain/changelog.ts';
@@ -21,7 +24,25 @@ export interface ReleaseResult {
   url: string | null;
   alreadyExists: boolean;
   recovered: boolean;
+  branchSynced: boolean;
+  branchSyncError: string | null;
 }
+
+export interface ReleaseOptions {
+  /** Configuration (for branch sync) */
+  config?: PlsConfig;
+}
+
+const DEFAULT_RESULT: ReleaseResult = {
+  released: false,
+  version: null,
+  tag: null,
+  url: null,
+  alreadyExists: false,
+  recovered: false,
+  branchSynced: false,
+  branchSyncError: null,
+};
 
 /**
  * Execute pls release workflow.
@@ -31,6 +52,7 @@ export interface ReleaseResult {
 export async function releaseWorkflow(
   git: LocalGit,
   github: GitHub,
+  options: ReleaseOptions = {},
 ): Promise<ReleaseResult> {
   // 1. Check if HEAD is a release commit
   const headSha = await git.getHeadSha();
@@ -50,28 +72,14 @@ export async function releaseWorkflow(
     // Not a release commit - read from versions.json
     const versionsContent = await git.readFile('.pls/versions.json');
     if (!versionsContent) {
-      return {
-        released: false,
-        version: null,
-        tag: null,
-        url: null,
-        alreadyExists: false,
-        recovered: false,
-      };
+      return { ...DEFAULT_RESULT };
     }
 
     const versions: VersionsManifest = JSON.parse(versionsContent);
     version = versions['.']?.version;
 
     if (!version) {
-      return {
-        released: false,
-        version: null,
-        tag: null,
-        url: null,
-        alreadyExists: false,
-        recovered: false,
-      };
+      return { ...DEFAULT_RESULT };
     }
 
     // Try to determine from/type from tag history
@@ -84,8 +92,16 @@ export async function releaseWorkflow(
   // 2. Check if tag already exists
   const existingTag = await github.getTag(tag);
   if (existingTag?.isPlsRelease) {
-    // Already released
-    const releaseExists = await github.releaseExists(tag);
+    // Already released - but still try branch sync
+    let branchSynced = false;
+    let branchSyncError: string | null = null;
+
+    if (options.config?.strategy === 'next') {
+      const syncResult = await syncBaseBranch(git, options.config);
+      branchSynced = syncResult.success;
+      branchSyncError = syncResult.error;
+    }
+
     return {
       released: false,
       version,
@@ -93,6 +109,8 @@ export async function releaseWorkflow(
       url: null,
       alreadyExists: true,
       recovered: false,
+      branchSynced,
+      branchSyncError,
     };
   }
 
@@ -127,12 +145,10 @@ export async function releaseWorkflow(
     // Tag might already exist (concurrent runs)
     if (String(error).includes('already exists')) {
       return {
-        released: false,
+        ...DEFAULT_RESULT,
         version,
         tag,
-        url: null,
         alreadyExists: true,
-        recovered: false,
       };
     }
     throw error;
@@ -154,6 +170,16 @@ export async function releaseWorkflow(
     console.warn(`Warning: Could not create GitHub Release: ${error}`);
   }
 
+  // 7. Sync branches for Strategy B (next → main)
+  let branchSynced = false;
+  let branchSyncError: string | null = null;
+
+  if (options.config?.strategy === 'next') {
+    const syncResult = await syncBaseBranch(git, options.config);
+    branchSynced = syncResult.success;
+    branchSyncError = syncResult.error;
+  }
+
   return {
     released: true,
     version,
@@ -161,6 +187,76 @@ export async function releaseWorkflow(
     url: releaseUrl,
     alreadyExists: false,
     recovered,
+    branchSynced,
+    branchSyncError,
+  };
+}
+
+/**
+ * Sync base branch (next) onto target branch (main) after release.
+ *
+ * Strategy B pattern:
+ * - Commits land on `next`
+ * - Releases merge to `main`
+ * - After release, rebase `next` on `main`
+ *
+ * Retries with exponential backoff to handle concurrent pushes.
+ */
+async function syncBaseBranch(
+  git: LocalGit,
+  config: PlsConfig,
+  maxRetries = 3,
+): Promise<{ success: boolean; error: string | null }> {
+  const { baseBranch, targetBranch } = config;
+
+  // Only sync if base and target are different
+  if (baseBranch === targetBranch) {
+    return { success: true, error: null };
+  }
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      // Fetch latest
+      await git.fetch('origin');
+
+      // Checkout base branch from remote
+      await git.checkoutBranch(baseBranch, `origin/${baseBranch}`);
+
+      // Rebase onto target
+      const rebaseSuccess = await git.rebase(`origin/${targetBranch}`);
+      if (!rebaseSuccess) {
+        return {
+          success: false,
+          error: `Rebase of ${baseBranch} onto ${targetBranch} failed (conflicts)`,
+        };
+      }
+
+      // Push with force-with-lease (safe force push)
+      const pushSuccess = await git.pushForceWithLease('origin', baseBranch);
+      if (pushSuccess) {
+        return { success: true, error: null };
+      }
+
+      // Push failed - branch changed during sync, retry
+      console.warn(`Retry ${attempt}/${maxRetries}: ${baseBranch} changed during sync`);
+
+      // Exponential backoff before retry
+      if (attempt < maxRetries) {
+        await sleep(Math.pow(2, attempt) * 1000); // 2s, 4s, 8s
+      }
+    } catch (error) {
+      // Unexpected error
+      return {
+        success: false,
+        error: `Failed to sync ${baseBranch}: ${error}`,
+      };
+    }
+  }
+
+  // All retries exhausted
+  return {
+    success: false,
+    error: `Could not sync ${baseBranch} after ${maxRetries} attempts. Manual sync may be needed.`,
   };
 }
 
@@ -190,4 +286,11 @@ async function findPreviousVersion(
   }
 
   return '0.0.0';
+}
+
+/**
+ * Sleep for specified milliseconds.
+ */
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

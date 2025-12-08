@@ -7,7 +7,6 @@
 import type { GitHub } from '../clients/github.ts';
 import type { VersionsManifest } from '../domain/types.ts';
 import { buildReleaseFiles } from '../domain/files.ts';
-import { generateChangelog } from '../domain/changelog.ts';
 import { getSelectedVersion, updatePRBody } from '../domain/pr-body.ts';
 import { PlsError } from '../lib/error.ts';
 

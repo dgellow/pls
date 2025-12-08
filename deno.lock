@@ -15,7 +15,6 @@
     "jsr:@std/path@1": "1.1.3",
     "jsr:@std/path@^1.1.2": "1.1.3",
     "jsr:@std/path@^1.1.3": "1.1.3",
-    "jsr:@std/semver@1": "1.0.7",
     "jsr:@std/testing@1": "1.0.16",
     "jsr:@ts-morph/bootstrap@0.24": "0.24.0",
     "jsr:@ts-morph/common@0.24": "0.24.0",
@@ -72,9 +71,6 @@
         "jsr:@std/internal"
       ]
     },
-    "@std/semver@1.0.7": {
-      "integrity": "7d5f65391762dc4358abde80fc3354086ddb40101f140295e60f290c138887d0"
-    },
     "@std/testing@1.0.16": {
       "integrity": "a917ffdeb5924c9be436dc78bc32e511760e14d3a96e49c607fc5ecca86d0092",
       "dependencies": [
@@ -114,7 +110,6 @@
       "jsr:@std/fmt@1",
       "jsr:@std/fs@1",
       "jsr:@std/path@1",
-      "jsr:@std/semver@1",
       "jsr:@std/testing@1"
     ]
   }

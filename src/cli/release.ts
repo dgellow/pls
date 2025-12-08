@@ -6,6 +6,7 @@ import { parseArgs } from '@std/cli/parse-args';
 import { LocalGit } from '../clients/local-git.ts';
 import { GitHub } from '../clients/github.ts';
 import { releaseWorkflow } from '../workflows/pr-release.ts';
+import { loadConfig } from '../domain/config.ts';
 import { PlsError } from '../lib/error.ts';
 import * as output from './output.ts';
 
@@ -27,6 +28,9 @@ ${output.bold('DESCRIPTION:')}
   Runs on every push to main for self-healing:
   - If tag exists: no-op (success)
   - If tag missing: creates it (self-heals from previous failure)
+
+  For Strategy B (next branch pattern), also syncs the base branch
+  onto the target branch after release.
 
 ${output.bold('EXAMPLES:')}
   pls release                 # Create release for current version
@@ -67,12 +71,20 @@ export async function release(args: string[]): Promise<void> {
 
   output.info('Repository', `${owner}/${repo}`);
 
+  // Load config
+  const configContent = await git.readFile('.pls/config.json');
+  const config = loadConfig(configContent);
+
+  if (config.strategy === 'next') {
+    output.info('Strategy', `${config.baseBranch} → ${config.targetBranch}`);
+  }
+
   // Create GitHub client
   const token = parsed.token || Deno.env.get('GITHUB_TOKEN') || '';
   const github = new GitHub({ owner, repo, token });
 
   // Execute workflow
-  const result = await releaseWorkflow(git, github);
+  const result = await releaseWorkflow(git, github, { config });
 
   // Output results
   if (!result.version) {
@@ -86,6 +98,11 @@ export async function release(args: string[]): Promise<void> {
     output.info('Tag', `${result.tag} ✓ (exists)`);
     console.log();
     console.log('Already released. Nothing to do.');
+
+    // Still show branch sync result
+    if (config.strategy === 'next') {
+      showBranchSyncResult(result.branchSynced, result.branchSyncError, config);
+    }
     return;
   }
 
@@ -96,5 +113,28 @@ export async function release(args: string[]): Promise<void> {
     } else {
       output.release(result.tag!, result.url);
     }
+
+    // Show branch sync result for Strategy B
+    if (config.strategy === 'next') {
+      showBranchSyncResult(result.branchSynced, result.branchSyncError, config);
+    }
+  }
+}
+
+/**
+ * Display branch sync result.
+ */
+function showBranchSyncResult(
+  synced: boolean,
+  error: string | null,
+  config: { baseBranch: string; targetBranch: string },
+): void {
+  console.log();
+  if (synced) {
+    console.log(
+      output.green(`✓ Synced ${config.baseBranch} onto ${config.targetBranch}`),
+    );
+  } else if (error) {
+    console.log(output.yellow(`⚠️  Branch sync: ${error}`));
   }
 }

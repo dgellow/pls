@@ -141,9 +141,6 @@ export async function localReleaseWorkflow(
 
   // 9. Push if requested
   if (push) {
-    const headSha = await git.getHeadSha();
-    // Get current branch name
-    // For simplicity, push HEAD and tag
     await git.push('HEAD');
     await git.push(newTag);
   }
