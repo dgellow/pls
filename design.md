@@ -111,6 +111,30 @@ No special recovery logic. The normal path handles failures.
 | `src/version.ts` | `export const VERSION = "1.2.3"` | pls prep | In release PR (optional) |
 | `.pls/config.json` | Configuration | Developer | Manual |
 
+### TypeScript Version File
+
+Keep a `VERSION` constant in sync with your manifest:
+
+```typescript
+// src/version_info.ts
+// @pls-version
+export const VERSION = '1.2.3';
+```
+
+**The magic comment `// @pls-version`** tells pls to update this file during releases.
+
+**Configuration in versions.json:**
+```json
+{
+  ".": {
+    "version": "1.2.3",
+    "versionFile": "src/version_info.ts"
+  }
+}
+```
+
+When `versionFile` is set, pls scans for `// @pls-version` and updates the `VERSION` constant.
+
 ### No SHA in versions.json
 
 **The chicken-egg problem:** We can't know the final SHA until after merge (squash/rebase create new SHAs).
@@ -297,8 +321,28 @@ Next steps:
 2. `package.json` → `{ "version": "x.y.z" }`
 3. Prompt user for initial version
 
+**Workspace detection:** If root manifest has a `workspace` field, pls scans
+workspace members and extracts their versions too:
+
+```json
+// deno.json
+{
+  "workspace": ["./packages/cli", "./packages/core"]
+}
+```
+
+Creates:
+```json
+// .pls/versions.json
+{
+  ".": "1.0.0",
+  "packages/cli": "1.0.0",
+  "packages/core": "1.0.0"
+}
+```
+
 **What it creates:**
-- `.pls/versions.json` with detected version
+- `.pls/versions.json` with detected version(s)
 - Annotated tag `v{version}` pointing to HEAD
 - Optionally: `.pls/config.json` if non-default settings needed
 
@@ -672,6 +716,31 @@ Updating PR... ✓
 - **Idempotent:** If already released, exits successfully (not error)
 - **Self-healing:** Finds and creates missing tag even if original CI failed
 - **Concurrent-safe:** "Tag already exists" → treat as success
+- **Release commit detection:** Checks if HEAD is a release commit (has `---pls-release---` metadata)
+
+### Release Commit Detection
+
+When a release PR is merged, the merge commit contains our structured metadata.
+`pls release` detects this and creates the tag without recalculating version:
+
+```typescript
+const commitMessage = await git.getCommitMessage('HEAD');
+const metadata = parseReleaseMetadata(commitMessage);
+
+if (metadata) {
+  // This IS a release commit - use version from metadata
+  await createTag(`v${metadata.version}`, 'HEAD');
+} else {
+  // Not a release commit - fall back to versions.json
+  const version = await readVersionsJson();
+  await findReleaseCommitAndTag(version);
+}
+```
+
+This prevents double-bumping: if someone merges the release PR and then
+pushes an unrelated commit, `pls release` on the second push won't
+recalculate the version—it reads from versions.json and finds the tag
+already exists.
 
 **UX - Already released:**
 ```
@@ -879,7 +948,37 @@ PR body contains selectable version options:
 </details>
 ```
 
+**UI Details:**
+- **Current selection** shown as text (no checkbox) to avoid double-click issues
+- **Alternatives** have checkboxes - checking one triggers sync workflow
+- **Disabled options** are struck through (e.g., can't go back from beta to alpha)
+
+**HTML markers for parsing:**
+```
+<!-- pls:v:1.3.0:minor:current -->     ← Current selection
+<!-- pls:v:1.3.0-alpha.0:transition --> ← Alternative option
+<!-- pls:v:1.2.4:patch:disabled:already past patch --> ← Disabled
+```
+
 User checks different box → saves PR → CI runs `pls sync` → branch updated.
+
+### Single Commit Principle
+
+**The release PR always has exactly ONE commit.** When the selection changes:
+
+1. New commit created with selected version
+2. Branch force-updated to point to new commit (old commit orphaned)
+3. PR title and description updated
+4. Comment posted noting the change
+
+This keeps the PR clean: merging always adds exactly one version-bump commit to main.
+
+```
+Before sync:        After sync:
+main ── A           main ── A
+        │                   │
+        └─ B (v1.3.0)       └─ C (v2.0.0)  ← B is orphaned
+```
 
 ---
 
