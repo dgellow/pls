@@ -36,7 +36,7 @@ export const DEFAULT_CONFIG: PlsConfig = {
 /**
  * Parse and validate configuration from JSON content.
  */
-export function parseConfig(content: string): Partial<PlsConfig> {
+function parseConfig(content: string): Partial<PlsConfig> {
   let parsed: Record<string, unknown>;
 
   try {
@@ -112,7 +112,7 @@ export function parseConfig(content: string): Partial<PlsConfig> {
 /**
  * Merge partial config with defaults.
  */
-export function mergeConfig(partial: Partial<PlsConfig>): PlsConfig {
+function mergeConfig(partial: Partial<PlsConfig>): PlsConfig {
   const config = { ...DEFAULT_CONFIG, ...partial };
 
   // If strategy is 'next', adjust defaults accordingly
@@ -159,14 +159,4 @@ export function generateConfigFile(options?: Partial<PlsConfig>): string {
   }
 
   return JSON.stringify(config, null, 2) + '\n';
-}
-
-/**
- * Detect strategy from branch configuration.
- */
-export function detectStrategy(config: PlsConfig): 'simple' | 'next' {
-  if (config.baseBranch !== config.targetBranch) {
-    return 'next';
-  }
-  return 'simple';
 }

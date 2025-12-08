@@ -9,7 +9,7 @@ import type { LocalGit } from '../clients/local-git.ts';
 import type { PullRequest, VersionBump, VersionsManifest } from '../domain/types.ts';
 import { calculateBump } from '../domain/bump.ts';
 import { filterReleasableCommits } from '../domain/commits.ts';
-import { generateChangelog } from '../domain/changelog.ts';
+import { generateChangelog, generateReleaseNotes } from '../domain/changelog.ts';
 import { buildReleaseFiles } from '../domain/files.ts';
 import { generatePRBody, getSelectedVersion } from '../domain/pr-body.ts';
 import { PlsError } from '../lib/error.ts';
@@ -84,7 +84,8 @@ export async function prepWorkflow(
 
   // 6. Build release files
   const effectiveBump: VersionBump = { ...bump, to: selectedVersion };
-  const changelog = generateChangelog(effectiveBump);
+  const changelogEntry = generateReleaseNotes(effectiveBump); // For CHANGELOG.md (with version header)
+  const changelog = generateChangelog(effectiveBump); // For PR body (body only)
 
   const denoJson = await github.readFile('deno.json', baseBranch);
   const packageJson = await github.readFile('package.json', baseBranch);
@@ -108,7 +109,7 @@ export async function prepWorkflow(
     packageJson,
     versionsJson: versionsContent,
     versionFile,
-    changelog,
+    changelog: changelogEntry,
     existingChangelog,
   });
 
