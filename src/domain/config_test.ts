@@ -3,17 +3,20 @@
  */
 
 import { assertEquals, assertThrows } from '@std/assert';
-import {
-  DEFAULT_CONFIG,
-  detectStrategy,
-  generateConfigFile,
-  loadConfig,
-  mergeConfig,
-  parseConfig,
-} from './config.ts';
+import { DEFAULT_CONFIG, generateConfigFile, loadConfig } from './config.ts';
 import { PlsError } from '../lib/error.ts';
 
-Deno.test('parseConfig', async (t) => {
+Deno.test('loadConfig', async (t) => {
+  await t.step('returns defaults for null content', () => {
+    const result = loadConfig(null);
+    assertEquals(result, DEFAULT_CONFIG);
+  });
+
+  await t.step('returns defaults for empty config', () => {
+    const result = loadConfig('{}');
+    assertEquals(result, DEFAULT_CONFIG);
+  });
+
   await t.step('parses valid config', () => {
     const content = JSON.stringify({
       baseBranch: 'develop',
@@ -22,7 +25,7 @@ Deno.test('parseConfig', async (t) => {
       versionFile: 'src/version.ts',
       strategy: 'next',
     });
-    const result = parseConfig(content);
+    const result = loadConfig(content);
 
     assertEquals(result.baseBranch, 'develop');
     assertEquals(result.targetBranch, 'main');
@@ -31,93 +34,7 @@ Deno.test('parseConfig', async (t) => {
     assertEquals(result.strategy, 'next');
   });
 
-  await t.step('parses partial config', () => {
-    const content = JSON.stringify({
-      baseBranch: 'develop',
-    });
-    const result = parseConfig(content);
-
-    assertEquals(result.baseBranch, 'develop');
-    assertEquals(result.targetBranch, undefined);
-    assertEquals(result.strategy, undefined);
-  });
-
-  await t.step('parses empty config', () => {
-    const result = parseConfig('{}');
-    assertEquals(result, {});
-  });
-
-  await t.step('throws for invalid JSON', () => {
-    assertThrows(
-      () => parseConfig('not json'),
-      PlsError,
-      'not valid JSON',
-    );
-  });
-
-  await t.step('throws for invalid baseBranch type', () => {
-    assertThrows(
-      () => parseConfig(JSON.stringify({ baseBranch: 123 })),
-      PlsError,
-      'baseBranch must be a string',
-    );
-  });
-
-  await t.step('throws for invalid strategy', () => {
-    assertThrows(
-      () => parseConfig(JSON.stringify({ strategy: 'invalid' })),
-      PlsError,
-      'strategy must be "simple" or "next"',
-    );
-  });
-});
-
-Deno.test('mergeConfig', async (t) => {
-  await t.step('returns defaults for empty partial', () => {
-    const result = mergeConfig({});
-    assertEquals(result, DEFAULT_CONFIG);
-  });
-
-  await t.step('overrides defaults with partial values', () => {
-    const result = mergeConfig({
-      baseBranch: 'develop',
-      strategy: 'next',
-    });
-
-    assertEquals(result.baseBranch, 'develop');
-    assertEquals(result.strategy, 'next');
-    assertEquals(result.targetBranch, 'main'); // default
-    assertEquals(result.releaseBranch, 'pls-release'); // default
-  });
-
-  await t.step('sets baseBranch to next for next strategy', () => {
-    const result = mergeConfig({
-      strategy: 'next',
-    });
-
-    assertEquals(result.baseBranch, 'next');
-    assertEquals(result.targetBranch, 'main');
-    assertEquals(result.strategy, 'next');
-  });
-
-  await t.step('respects explicit baseBranch for next strategy', () => {
-    const result = mergeConfig({
-      strategy: 'next',
-      baseBranch: 'develop',
-    });
-
-    assertEquals(result.baseBranch, 'develop');
-    assertEquals(result.strategy, 'next');
-  });
-});
-
-Deno.test('loadConfig', async (t) => {
-  await t.step('returns defaults for null content', () => {
-    const result = loadConfig(null);
-    assertEquals(result, DEFAULT_CONFIG);
-  });
-
-  await t.step('parses and merges config', () => {
+  await t.step('merges partial config with defaults', () => {
     const content = JSON.stringify({
       baseBranch: 'develop',
     });
@@ -125,6 +42,50 @@ Deno.test('loadConfig', async (t) => {
 
     assertEquals(result.baseBranch, 'develop');
     assertEquals(result.targetBranch, DEFAULT_CONFIG.targetBranch);
+    assertEquals(result.releaseBranch, DEFAULT_CONFIG.releaseBranch);
+    assertEquals(result.strategy, DEFAULT_CONFIG.strategy);
+  });
+
+  await t.step('sets baseBranch to next for next strategy', () => {
+    const content = JSON.stringify({
+      strategy: 'next',
+    });
+    const result = loadConfig(content);
+
+    assertEquals(result.baseBranch, 'next');
+    assertEquals(result.targetBranch, 'main');
+    assertEquals(result.strategy, 'next');
+  });
+
+  await t.step('respects explicit baseBranch for next strategy', () => {
+    const content = JSON.stringify({
+      strategy: 'next',
+      baseBranch: 'develop',
+    });
+    const result = loadConfig(content);
+
+    assertEquals(result.baseBranch, 'develop');
+    assertEquals(result.strategy, 'next');
+  });
+
+  await t.step('throws for invalid JSON', () => {
+    assertThrows(() => loadConfig('not json'), PlsError, 'not valid JSON');
+  });
+
+  await t.step('throws for invalid baseBranch type', () => {
+    assertThrows(
+      () => loadConfig(JSON.stringify({ baseBranch: 123 })),
+      PlsError,
+      'baseBranch must be a string',
+    );
+  });
+
+  await t.step('throws for invalid strategy', () => {
+    assertThrows(
+      () => loadConfig(JSON.stringify({ strategy: 'invalid' })),
+      PlsError,
+      'strategy must be "simple" or "next"',
+    );
   });
 });
 
@@ -164,27 +125,5 @@ Deno.test('generateConfigFile', async (t) => {
     const parsed = JSON.parse(result);
 
     assertEquals(parsed.versionFile, 'src/version.ts');
-  });
-});
-
-Deno.test('detectStrategy', async (t) => {
-  await t.step('returns simple when branches match', () => {
-    const result = detectStrategy({
-      baseBranch: 'main',
-      targetBranch: 'main',
-      releaseBranch: 'pls-release',
-      strategy: 'simple',
-    });
-    assertEquals(result, 'simple');
-  });
-
-  await t.step('returns next when branches differ', () => {
-    const result = detectStrategy({
-      baseBranch: 'next',
-      targetBranch: 'main',
-      releaseBranch: 'pls-release',
-      strategy: 'simple', // This should be overridden
-    });
-    assertEquals(result, 'next');
   });
 });

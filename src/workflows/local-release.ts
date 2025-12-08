@@ -6,12 +6,11 @@
 
 import type { LocalGit } from '../clients/local-git.ts';
 import type { VersionBump, VersionsManifest } from '../domain/types.ts';
-import { calculateBump } from '../domain/bump.ts';
+import { calculateBump, calculateTransition } from '../domain/bump.ts';
 import { filterReleasableCommits } from '../domain/commits.ts';
-import { generateChangelog } from '../domain/changelog.ts';
+import { generateChangelog, generateReleaseNotes } from '../domain/changelog.ts';
 import { buildReleaseFiles } from '../domain/files.ts';
 import { generateReleaseTagMessage } from '../domain/release-metadata.ts';
-import * as semver from '../lib/semver.ts';
 import { PlsError } from '../lib/error.ts';
 
 export interface LocalReleaseResult {
@@ -85,7 +84,8 @@ export async function localReleaseWorkflow(
   }
 
   // 5. Build release files
-  const changelog = generateChangelog(bump);
+  const changelogEntry = generateReleaseNotes(bump); // For CHANGELOG.md (with version header)
+  const changelog = generateChangelog(bump); // For tag message (body only)
 
   const denoJson = await git.readFile('deno.json');
   const packageJson = await git.readFile('package.json');
@@ -109,7 +109,7 @@ export async function localReleaseWorkflow(
     packageJson,
     versionsJson: versionsContent,
     versionFile,
-    changelog,
+    changelog: changelogEntry,
     existingChangelog,
   });
 
@@ -184,26 +184,17 @@ export async function transitionWorkflow(
   }
 
   // 2. Calculate transition
-  const currentStage = semver.getStage(currentVersion);
-  let newVersion: string;
-
-  if (currentStage === 'stable' && target !== 'stable') {
-    // Stable → prerelease: bump first, then add suffix
-    newVersion = semver.toPrerelease(currentVersion, bumpType, target);
-  } else {
-    // Prerelease → prerelease or stable
-    newVersion = semver.transition(currentVersion, target);
-  }
+  const { from, to } = calculateTransition(currentVersion, target, bumpType);
 
   const bump: VersionBump = {
-    from: currentVersion,
-    to: newVersion,
+    from,
+    to,
     type: 'patch', // Transitions are always "transition" type semantically
     commits: [],
   };
 
   // 3. Build release files
-  const changelog = `Transition to ${target}: ${currentVersion} → ${newVersion}`;
+  const changelog = `Transition to ${target}: ${from} → ${to}`;
 
   const denoJson = await git.readFile('deno.json');
   const packageJson = await git.readFile('package.json');
@@ -219,8 +210,8 @@ export async function transitionWorkflow(
   }
 
   const { files, commitMessage } = buildReleaseFiles({
-    version: newVersion,
-    from: currentVersion,
+    version: to,
+    from,
     type: 'transition',
     denoJson,
     packageJson,
@@ -233,8 +224,8 @@ export async function transitionWorkflow(
   if (dryRun) {
     return {
       released: false,
-      version: newVersion,
-      tag: `v${newVersion}`,
+      version: to,
+      tag: `v${to}`,
       bump,
       dryRun: true,
     };
@@ -249,9 +240,9 @@ export async function transitionWorkflow(
   await git.commit(commitMessage);
 
   // 6. Create tag
-  const newTag = `v${newVersion}`;
+  const newTag = `v${to}`;
   const tagMessage = generateReleaseTagMessage(
-    { version: newVersion, from: currentVersion, type: 'transition' },
+    { version: to, from, type: 'transition' },
     changelog,
   );
   await git.createTag(newTag, tagMessage);
@@ -264,7 +255,7 @@ export async function transitionWorkflow(
 
   return {
     released: true,
-    version: newVersion,
+    version: to,
     tag: newTag,
     bump,
     dryRun: false,
