@@ -8,14 +8,22 @@ Release automation tool for Deno/TypeScript projects.
 # Dry run (default)
 pls
 
-# Create release
+# Create local release
 pls --execute
 
-# Use local storage
-pls --storage=local --execute
+# Push tags after release
+pls --execute --push
+```
 
-# Use GitHub storage
-pls --storage=github --execute
+## Getting Started
+
+```bash
+# Initialize pls in your repository
+pls init                           # Dry run
+pls init --execute                 # Create .pls/versions.json and tag
+
+# Create your first release
+pls --execute
 ```
 
 ## Version Transitions
@@ -70,15 +78,18 @@ pls prep
 pls prep --execute
 
 # Sync PR when user changes selection (triggered by workflow)
-pls prep --github-pr=123 --execute
+pls sync --pr=123
+
+# Create GitHub release after PR merge
+pls release
 ```
 
 ### How It Works
 
 1. `pls prep --execute` creates a PR with version options in the description
 2. User selects desired version by checking a checkbox
-3. GitHub workflow runs `pls prep --github-pr=123 --execute` to apply the selection
-4. On merge, `pls --storage=github --execute` creates the release
+3. GitHub workflow runs `pls sync --pr=123` to apply the selection
+4. On merge, `pls release` creates the tag and GitHub Release
 
 ### PR Description Format
 
@@ -114,7 +125,6 @@ The release PR always has exactly ONE commit. When the selection changes:
 2. Fresh commit is created with new version
 3. Branch is force-pushed
 4. PR title and description are updated
-5. Comment is posted noting the change
 
 ## TypeScript Version File
 
@@ -126,8 +136,17 @@ Keep a `VERSION` constant in sync with your `deno.json`:
 export const VERSION = '1.2.3';
 ```
 
-The magic comment `// @pls-version` tells pls to update this file during releases. On first run, pls
-scans `src/**/*.ts` for the comment and caches the path in `.pls/versions.json`.
+The magic comment `// @pls-version` tells pls to update this file during releases. Configure it
+during init or add to `.pls/versions.json`:
+
+```json
+{
+  ".": {
+    "version": "1.2.3",
+    "versionFile": "src/version_info.ts"
+  }
+}
+```
 
 **Usage:**
 
@@ -136,18 +155,13 @@ import { VERSION } from './version_info.ts';
 console.log(`My app v${VERSION}`);
 ```
 
-## Storage Backends
-
-- **Local**: JSON file in `.pls/` directory
-- **GitHub**: Uses tags and releases
-
 ## What It Does
 
 1. Detects commits since last release
 2. Calculates version bump from conventional commits
-3. Creates git tags and pushes them
-4. Saves release info via storage backend
-5. Generates CHANGELOG.md
+3. Updates version files (deno.json, package.json, CHANGELOG.md)
+4. Creates git tags
+5. Creates GitHub Releases (with `pls release`)
 
 ## Installation
 
@@ -156,7 +170,7 @@ console.log(`My app v${VERSION}`);
 deno run -A jsr:@dgellow/pls
 
 # Or install globally
-deno install -A -n pls jsr:@dgellow/pls/cli
+deno install -A -n pls jsr:@dgellow/pls
 ```
 
 ## Development
