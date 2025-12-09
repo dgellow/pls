@@ -410,9 +410,9 @@ Deno.test('workflow syncs TypeScript version file', async (t) => {
 
       assertEquals(result.version, '1.1.0');
 
-      // Verify version file was updated (uses single quotes)
+      // Verify version file was updated (preserves original double quotes)
       const versionContent = await git.readFile('src/version.ts');
-      assertStringIncludes(versionContent!, "VERSION = '1.1.0'");
+      assertStringIncludes(versionContent!, 'VERSION = "1.1.0"');
     } finally {
       await cleanup();
     }
