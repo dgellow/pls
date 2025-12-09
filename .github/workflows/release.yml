@@ -27,7 +27,7 @@ jobs:
         run: deno lint
 
       - name: Type check
-        run: deno check src/mod.ts src/cli.ts
+        run: deno check src/
 
       - name: Run tests
         run: deno test -A
@@ -60,13 +60,13 @@ jobs:
 
       - name: Create release (on release commit)
         if: steps.check.outputs.is_release == 'true'
-        run: deno run -A src/cli.ts --storage=github --execute
+        run: deno run -A src/cli/main.ts --storage=github --execute
         env:
           # Use PAT instead of GITHUB_TOKEN so the release event triggers other workflows
           GITHUB_TOKEN: ${{ secrets.PLS_RELEASE_TOKEN }}
 
       - name: Create/update release PR (on regular commit)
         if: steps.check.outputs.is_release == 'false'
-        run: deno run -A src/cli.ts prep --execute
+        run: deno run -A src/cli/main.ts prep --execute
         env:
           GITHUB_TOKEN: ${{ secrets.PLS_RELEASE_TOKEN }}
