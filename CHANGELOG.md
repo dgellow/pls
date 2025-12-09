@@ -1,10 +1,16 @@
 # Changelog
 
+## 0.6.1
+
+### Bug Fixes
+
+- preserve quote style when updating @pls-version files
+
 ## 0.6.0
 
-### ⚠️ Breaking Changes
+### â ï¸ Breaking Changes
 
-- ⚠️ BREAKING: complete rewrite following design.md architecture
+- â ï¸ BREAKING: complete rewrite following design.md architecture
 
 ### Features
 
