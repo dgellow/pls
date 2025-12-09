@@ -7,8 +7,8 @@
 import type { FileChanges, ReleaseMetadata, VersionsManifest } from './types.ts';
 import { generateReleaseCommitMessage } from './release-metadata.ts';
 
-const VERSION_MAGIC_PATTERN = /^\/\/ @pls-version\s*$/m;
-const VERSION_EXPORT_PATTERN = /^export const VERSION = ['"][^'"]+['"];?$/m;
+const VERSION_MARKER = /@pls-version(?![ \t]+\w)/;
+const SEMVER = /\d+\.\d+\.\d+(-[\w.]+)?/;
 
 export interface BuildFilesInput {
   /** New version */
@@ -135,21 +135,23 @@ export function updateVersionsManifest(
 }
 
 /**
- * Update TypeScript version file.
- * Only updates if file has // @pls-version magic comment.
+ * Update version in file marked with @pls-version.
+ * Replaces only the semver on the line after the marker.
  */
 export function updateVersionFile(
   content: string,
   version: string,
 ): string | null {
-  if (!VERSION_MAGIC_PATTERN.test(content)) {
-    return null;
-  }
+  if (!VERSION_MARKER.test(content)) return null;
 
-  return content.replace(
-    VERSION_EXPORT_PATTERN,
-    `export const VERSION = '${version}';`,
-  );
+  const lines = content.split('\n');
+  for (let i = 0; i < lines.length - 1; i++) {
+    if (VERSION_MARKER.test(lines[i]) && SEMVER.test(lines[i + 1])) {
+      lines[i + 1] = lines[i + 1].replace(SEMVER, version);
+      return lines.join('\n');
+    }
+  }
+  return null;
 }
 
 /**

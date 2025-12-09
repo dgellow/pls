@@ -135,58 +135,61 @@ Deno.test('updateVersionsManifest', async (t) => {
 });
 
 Deno.test('updateVersionFile', async (t) => {
-  await t.step('updates version in TypeScript file with marker', () => {
-    const content = `// @pls-version
-export const VERSION = '1.0.0';
-`;
-    const result = updateVersionFile(content, '2.0.0');
-
-    assertEquals(
-      result,
-      `// @pls-version
-export const VERSION = '2.0.0';
-`,
+  await t.step('replaces only semver, preserves quotes and syntax', () => {
+    // Double quotes preserved
+    const double = updateVersionFile(
+      `// @pls-version\nexport const VERSION = "1.0.0";\n`,
+      '2.0.0',
     );
+    assertEquals(double, `// @pls-version\nexport const VERSION = "2.0.0";\n`);
+
+    // Single quotes preserved
+    const single = updateVersionFile(
+      `// @pls-version\nexport const VERSION = '1.0.0';\n`,
+      '2.0.0',
+    );
+    assertEquals(single, `// @pls-version\nexport const VERSION = '2.0.0';\n`);
   });
 
-  await t.step('normalizes to single quotes', () => {
-    const content = `// @pls-version
-export const VERSION = "1.0.0";
-`;
-    const result = updateVersionFile(content, '2.0.0');
+  await t.step('works with different comment styles', () => {
+    // Python/Shell style
+    const python = updateVersionFile(`# @pls-version\n__version__ = "1.0.0"\n`, '2.0.0');
+    assertEquals(python, `# @pls-version\n__version__ = "2.0.0"\n`);
 
-    // Implementation always outputs single quotes
-    assertEquals(result?.includes("'2.0.0'"), true);
+    // HTML/XML style
+    const html = updateVersionFile(
+      `<!-- @pls-version -->\n<meta content="1.0.0">\n`,
+      '2.0.0',
+    );
+    assertEquals(html, `<!-- @pls-version -->\n<meta content="2.0.0">\n`);
   });
 
-  await t.step('preserves other code', () => {
-    const content = `// @pls-version
+  await t.step('handles prerelease versions', () => {
+    const result = updateVersionFile(
+      `// @pls-version\nexport const VERSION = '1.0.0-beta.1';\n`,
+      '1.0.0',
+    );
+    assertEquals(result, `// @pls-version\nexport const VERSION = '1.0.0';\n`);
+  });
+
+  await t.step('returns null when no valid marker found', () => {
+    assertEquals(updateVersionFile(`export const VERSION = '1.0.0';`, '2.0.0'), null);
+    assertEquals(updateVersionFile(`// @pls-version`, '2.0.0'), null);
+    assertEquals(updateVersionFile(`// @pls-version\nno version here`, '2.0.0'), null);
+  });
+
+  await t.step('skips @pls-version in prose, finds real marker', () => {
+    const content = `/**
+ * The @pls-version feature auto-updates.
+ * Version: 1.0.0
+ */
+
+// @pls-version
 export const VERSION = '1.0.0';
-
-export function getVersion() {
-  return VERSION;
-}
 `;
     const result = updateVersionFile(content, '2.0.0');
-
-    assertEquals(result?.includes("export const VERSION = '2.0.0';"), true);
-    assertEquals(result?.includes('export function getVersion()'), true);
-  });
-
-  await t.step('returns null if no marker', () => {
-    const content = `export const VERSION = '1.0.0';`;
-    const result = updateVersionFile(content, '2.0.0');
-
-    assertEquals(result, null);
-  });
-
-  await t.step('returns unchanged if marker but wrong pattern', () => {
-    const content = `// @pls-version
-const VERSION = '1.0.0';`;
-    const result = updateVersionFile(content, '2.0.0');
-
-    // Pattern requires 'export const', replace does nothing
-    assertEquals(result, content);
+    assertEquals(result?.includes("export const VERSION = '2.0.0'"), true);
+    assertEquals(result?.includes('Version: 1.0.0'), true); // prose unchanged
   });
 });
 
