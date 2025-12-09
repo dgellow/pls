@@ -9,29 +9,6 @@ permissions:
   pull-requests: write
 
 jobs:
-  # Run CI checks in parallel (don't block release)
-  lint:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: denoland/setup-deno@v2
-        with:
-          deno-version: v2.5.x
-          cache: true
-
-      - name: Check formatting
-        run: deno fmt --check
-
-      - name: Lint
-        run: deno lint
-
-      - name: Type check
-        run: deno check src/
-
-      - name: Run tests
-        run: deno test -A
-
   release:
     runs-on: ubuntu-latest
     steps:
@@ -46,7 +23,7 @@ jobs:
 
       - uses: denoland/setup-deno@v2
         with:
-          deno-version: v2.5.x
+          deno-version: v2.x
           cache: true
 
       - name: Check if release commit
@@ -60,7 +37,7 @@ jobs:
 
       - name: Create release (on release commit)
         if: steps.check.outputs.is_release == 'true'
-        run: deno run -A src/cli/main.ts --storage=github --execute
+        run: deno run -A src/cli/main.ts release
         env:
           # Use PAT instead of GITHUB_TOKEN so the release event triggers other workflows
           GITHUB_TOKEN: ${{ secrets.PLS_RELEASE_TOKEN }}
