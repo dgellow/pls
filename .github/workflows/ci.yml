@@ -45,3 +45,33 @@ jobs:
 
       - name: Run tests
         run: deno test -A
+
+  test-npm-build:
+    name: Test npm Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.5.x
+          cache: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Build npm packages (linux-x64 only)
+        run: deno run -A scripts/build_npm.ts --platform linux-x64
+
+      - name: Test CLI binary
+        run: |
+          ./npm/pls-linux-x64/bin/pls --version
+          ./npm/pls-linux-x64/bin/pls --help
+
+      - name: Test npm install
+        run: |
+          cd /tmp
+          npm init -y
+          npm install ${{ github.workspace }}/npm/pls ${{ github.workspace }}/npm/pls-linux-x64
+          npx pls --version
