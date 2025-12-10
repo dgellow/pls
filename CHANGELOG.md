@@ -1,5 +1,7 @@
 # Changelog
 
+Version changed from 0.6.1 to 0.7.0-alpha.0
+
 ## 0.6.1
 
 ### Bug Fixes
@@ -8,9 +10,9 @@
 
 ## 0.6.0
 
-### â ï¸ Breaking Changes
+### Ã¢ÂÂ Ã¯Â¸Â Breaking Changes
 
-- â ï¸ BREAKING: complete rewrite following design.md architecture
+- Ã¢ÂÂ Ã¯Â¸Â BREAKING: complete rewrite following design.md architecture
 
 ### Features
 
