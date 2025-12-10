@@ -166,11 +166,17 @@ console.log(`My app v${VERSION}`);
 ## Installation
 
 ```bash
-# Run directly
-deno run -A jsr:@dgellow/pls
+# npm
+npm install -g @dgellow/pls
 
-# Or install globally
-deno install -A -n pls jsr:@dgellow/pls
+# npx (no install)
+npx @dgellow/pls
+
+# Deno
+deno install -gAn pls jsr:@dgellow/pls
+
+# deno run (no install)
+deno run -A jsr:@dgellow/pls
 ```
 
 ## Development
