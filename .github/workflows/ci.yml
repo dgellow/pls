@@ -59,7 +59,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: '20'
 
       - name: Build npm packages (linux-x64 only)
         run: deno run -A scripts/build_npm.ts --platform linux-x64
