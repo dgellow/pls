@@ -67,39 +67,55 @@ Do one thing well. Resist the urge to add features "while we're at it."
 
 ```
 src/
-├── cli.ts              # Entry point, argument parsing, orchestration
-├── cli-pr.ts           # PR subcommand handler
-├── cli-transition.ts   # Version transition subcommand
-├── types.ts            # Shared types and PlsError class
-├── core/
-│   ├── detector.ts     # Git commit detection
-│   ├── version.ts      # Semantic version calculation
-│   ├── release.ts      # Release creation and tagging
-│   ├── pull-request.ts # GitHub PR creation
-│   ├── transition.ts   # Pre-release version handling
-│   └── release-metadata.ts  # Structured commit message format
-├── storage/
-│   ├── interface.ts    # Storage contract
-│   ├── github.ts       # GitHub releases backend
-│   ├── local.ts        # Local JSON file backend
-│   └── factory.ts      # Storage instantiation
-├── manifest/
-│   ├── interface.ts    # Manifest contract (deno.json, package.json)
-│   ├── deno.ts         # Deno manifest handler
-│   ├── node.ts         # Node manifest handler
-│   └── factory.ts      # Manifest detection
-└── versions/
-    └── mod.ts          # .pls/versions.json handling
+├── cli/
+│   ├── main.ts         # Entry point, argument parsing
+│   ├── init.ts         # pls init command
+│   ├── prep.ts         # pls prep command
+│   ├── sync.ts         # pls sync command
+│   ├── release.ts      # pls release command
+│   └── output.ts       # CLI output formatting
+├── workflows/
+│   ├── init.ts         # Bootstrap initialization workflow
+│   ├── pr-create.ts    # Create/update release PR (+ bootstrap)
+│   ├── pr-sync.ts      # Sync PR after version selection
+│   ├── pr-release.ts   # Post-merge release creation
+│   └── local-release.ts # Local release workflow
+├── domain/
+│   ├── bump.ts         # Version bump calculation
+│   ├── commits.ts      # Commit parsing
+│   ├── changelog.ts    # Changelog generation
+│   ├── files.ts        # Release file building
+│   ├── pr-body.ts      # PR body generation/parsing
+│   ├── config.ts       # Configuration handling
+│   ├── release-metadata.ts # Structured metadata format
+│   └── types.ts        # Shared types
+├── clients/
+│   ├── github.ts       # GitHub API client
+│   ├── local-git.ts    # Local git operations
+│   └── types.ts        # Client interfaces
+├── lib/
+│   ├── error.ts        # PlsError class
+│   └── semver.ts       # Semantic version utilities
+└── version_info.ts     # VERSION constant (auto-updated)
 ```
 
 ### Key Interfaces
 
 ```typescript
-// Storage abstraction - the heart of pls
-interface Storage {
-  getLastRelease(): Promise<Release | null>;
-  saveRelease(release: Release): Promise<void>;
-  listReleases(): Promise<Release[]>;
+// Git operations (local git CLI)
+interface GitClient {
+  readFile(path: string): Promise<string | null>;
+  getCommitsSince(sha: string | null): Promise<Commit[]>;
+  commit(message: string): Promise<string>;
+  createTag(name: string, message: string): Promise<void>;
+}
+
+// GitHub API operations
+interface GitHubClient {
+  readFile(path: string, ref?: string): Promise<string | null>;
+  commit(files: FileChanges, message: string, parentSha: string): Promise<string>;
+  ensureBranch(branch: string, sha: string): Promise<void>;
+  createPR(options: CreatePROptions): Promise<PullRequest>;
 }
 
 // Structured error with code for programmatic handling

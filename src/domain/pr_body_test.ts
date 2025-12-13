@@ -4,6 +4,7 @@
 
 import { assertEquals } from '@std/assert';
 import {
+  generateBootstrapPRBody,
   generateOptions,
   generateOptionsBlock,
   generatePRBody,
@@ -324,5 +325,31 @@ Footer text here.`;
     const originalBody = 'No options block here';
     const newBody = updatePRBody(originalBody, '2.0.0');
     assertEquals(newBody, originalBody);
+  });
+});
+
+Deno.test('generateBootstrapPRBody', async (t) => {
+  await t.step('generates bootstrap PR body with version and manifest', () => {
+    const body = generateBootstrapPRBody('1.2.3', 'deno.json');
+
+    assertEquals(body.includes('## Initialize pls'), true);
+    assertEquals(body.includes('`.pls/versions.json`'), true);
+    assertEquals(body.includes('`1.2.3`'), true);
+    assertEquals(body.includes('`deno.json`'), true);
+    assertEquals(body.includes('Future releases will work automatically'), true);
+  });
+
+  await t.step('works with package.json manifest', () => {
+    const body = generateBootstrapPRBody('2.0.0', 'package.json');
+
+    assertEquals(body.includes('`2.0.0`'), true);
+    assertEquals(body.includes('`package.json`'), true);
+  });
+
+  await t.step('does not include version selection UI', () => {
+    const body = generateBootstrapPRBody('1.0.0', 'deno.json');
+
+    assertEquals(body.includes('<!-- pls:options -->'), false);
+    assertEquals(body.includes('Switch to:'), false);
   });
 });

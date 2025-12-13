@@ -17,6 +17,8 @@ pls --execute --push
 
 ## Getting Started
 
+### Option 1: Local initialization
+
 ```bash
 # Initialize pls in your repository
 pls init                           # Dry run
@@ -25,6 +27,18 @@ pls init --execute                 # Create .pls/versions.json and tag
 # Create your first release
 pls --execute
 ```
+
+### Option 2: Bootstrap via PR (CI)
+
+If you run `pls prep` without an existing `.pls/versions.json`, it automatically creates a bootstrap
+PR:
+
+```bash
+pls prep --execute
+# Creates PR that adds .pls/versions.json with your current version
+```
+
+This is useful for CI-first workflows where you want all changes to go through pull requests.
 
 ## Version Transitions
 

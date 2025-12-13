@@ -6,18 +6,24 @@
 
 import type { GitHub } from '../clients/github.ts';
 import type { LocalGit } from '../clients/local-git.ts';
-import type { PullRequest, VersionBump, VersionsManifest } from '../domain/types.ts';
+import type { FileChanges, PullRequest, VersionBump, VersionsManifest } from '../domain/types.ts';
 import { calculateBump } from '../domain/bump.ts';
 import { filterReleasableCommits } from '../domain/commits.ts';
 import { generateChangelog, generateReleaseNotes } from '../domain/changelog.ts';
-import { buildReleaseFiles } from '../domain/files.ts';
-import { generatePRBody, getSelectedVersion } from '../domain/pr-body.ts';
+import {
+  buildReleaseFiles,
+  createInitialVersionsManifest,
+  extractVersionFromManifest,
+} from '../domain/files.ts';
+import { generateBootstrapPRBody, generatePRBody, getSelectedVersion } from '../domain/pr-body.ts';
 import { PlsError } from '../lib/error.ts';
 
 export interface PrepResult {
   pr: PullRequest | null;
   bump: VersionBump | null;
   dryRun: boolean;
+  bootstrap?: boolean;
+  bootstrapVersion?: string;
 }
 
 export interface PrepOptions {
@@ -36,13 +42,10 @@ export async function prepWorkflow(
 ): Promise<PrepResult> {
   const { baseBranch, releaseBranch, dryRun } = options;
 
-  // 1. Read current state
+  // 1. Read current state - bootstrap if no versions.json
   const versionsContent = await github.readFile('.pls/versions.json', baseBranch);
   if (!versionsContent) {
-    throw new PlsError(
-      'No .pls/versions.json found. Run `pls init` first.',
-      'NO_VERSIONS_MANIFEST',
-    );
+    return await bootstrapWorkflow(github, options);
   }
 
   const versions: VersionsManifest = JSON.parse(versionsContent);
@@ -193,4 +196,97 @@ async function findReleaseSha(
   }
 
   return sha;
+}
+
+/**
+ * Bootstrap workflow - creates initialization PR when no versions.json exists.
+ */
+async function bootstrapWorkflow(
+  github: GitHub,
+  options: PrepOptions,
+): Promise<PrepResult> {
+  const { baseBranch, releaseBranch, dryRun } = options;
+
+  // 1. Detect project version from manifest (via GitHub API)
+  const denoJson = await github.readFile('deno.json', baseBranch);
+  const packageJson = await github.readFile('package.json', baseBranch);
+
+  let version: string | null = null;
+  let manifest: string | null = null;
+
+  if (denoJson) {
+    version = extractVersionFromManifest(denoJson);
+    manifest = 'deno.json';
+  } else if (packageJson) {
+    version = extractVersionFromManifest(packageJson);
+    manifest = 'package.json';
+  }
+
+  if (!version || !manifest) {
+    throw new PlsError(
+      'Could not detect version from manifest.\n' +
+        'Add "version" to your deno.json or package.json, or use `pls init --version=X.Y.Z`',
+      'NO_VERSION_DETECTED',
+    );
+  }
+
+  // 2. Build bootstrap files
+  const files: FileChanges = new Map();
+  const versionsContent = createInitialVersionsManifest(version);
+  files.set('.pls/versions.json', versionsContent);
+
+  const commitMessage = `chore: initialize pls at v${version}`;
+
+  // 3. Generate PR content
+  const prBody = generateBootstrapPRBody(version, manifest);
+  const prTitle = `chore: initialize pls v${version}`;
+
+  if (dryRun) {
+    return {
+      pr: {
+        number: 0,
+        title: prTitle,
+        body: prBody,
+        branch: releaseBranch,
+        url: '',
+      },
+      bump: null,
+      dryRun: true,
+      bootstrap: true,
+      bootstrapVersion: version,
+    };
+  }
+
+  // 4. Create commit and branch
+  const baseSha = await github.getBranchSha(baseBranch);
+  if (!baseSha) {
+    throw new PlsError(`Base branch ${baseBranch} not found`, 'BRANCH_NOT_FOUND');
+  }
+
+  const commitSha = await github.commit(files, commitMessage, baseSha);
+  await github.ensureBranch(releaseBranch, commitSha);
+
+  // 5. Create or update PR
+  const existingPR = await github.findPR(releaseBranch);
+  let pr: PullRequest;
+
+  if (existingPR) {
+    await github.updatePR(existingPR.number, { title: prTitle, body: prBody });
+    pr = { ...existingPR, title: prTitle, body: prBody };
+  } else {
+    pr = await github.createPR({
+      title: prTitle,
+      body: prBody,
+      head: releaseBranch,
+      base: baseBranch,
+    });
+  }
+
+  return {
+    pr,
+    bump: null,
+    dryRun: false,
+    bootstrap: true,
+    bootstrapVersion: version,
+  };
 }

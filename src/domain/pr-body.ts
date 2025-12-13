@@ -289,3 +289,21 @@ export function updatePRBody(
 
   return updatedBody;
 }
+
+/**
+ * Generate PR body for bootstrap (no version selection).
+ */
+export function generateBootstrapPRBody(
+  version: string,
+  manifest: string,
+): string {
+  return `## Initialize pls
+
+This PR initializes pls for version tracking.
+
+### What this does
+- Creates \`.pls/versions.json\` with version \`${version}\` (detected from \`${manifest}\`)
+
+---
+*Merging this PR will initialize pls. Future releases will work automatically.*`;
+}

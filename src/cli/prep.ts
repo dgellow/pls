@@ -79,6 +79,31 @@ export async function prep(args: string[]): Promise<void> {
   });
 
   // Output results
+  if (result.bootstrap) {
+    // Bootstrap output
+    console.log();
+    console.log(output.yellow('No .pls/versions.json found.'));
+    console.log();
+    console.log('Detecting project version...');
+    output.info('Found', `${result.bootstrapVersion}`);
+    console.log();
+
+    if (result.dryRun) {
+      output.dryRun();
+      console.log('Would create bootstrap PR:');
+      console.log(`  - Add .pls/versions.json (version: ${result.bootstrapVersion})`);
+    } else if (result.pr) {
+      console.log('Creating bootstrap PR...');
+      console.log(`  - Add .pls/versions.json (version: ${result.bootstrapVersion})`);
+      console.log();
+      output.success(`Bootstrap PR: ${result.pr.url}`);
+      console.log();
+      console.log('Merge this PR to initialize pls, then releases will work automatically.');
+    }
+    return;
+  }
+
+  // Regular prep output
   if (!result.bump) {
     output.warn('No changes to release');
     return;

@@ -374,7 +374,6 @@ Found: package.json with version "2.3.1"
 
 Creating bootstrap PR...
   - Add .pls/versions.json (version: 2.3.1)
-  - Create tag v2.3.1 after merge
 
 ✅ Bootstrap PR: https://github.com/org/repo/pull/1
 
