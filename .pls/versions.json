@@ -1,6 +1,6 @@
 {
   ".": {
-    "version": "0.7.0-alpha.3",
+    "version": "0.7.0",
     "versionFile": "src/version_info.ts"
   }
 }

@@ -1,6 +1,6 @@
 {
   "name": "@dgellow/pls",
-  "version": "0.7.0-alpha.3",
+  "version": "0.7.0",
   "license": "Elastic-2.0",
   "exports": {
     ".": "./src/cli/main.ts"
