@@ -18,7 +18,9 @@ jobs:
 
       - uses: denoland/setup-deno@v2
         with:
-          deno-version: v2.6.x
+          # Pinned to 2.5.x due to x86_64-apple-darwin compile bug in 2.6.0
+          # See: https://github.com/denoland/deno/issues/31556
+          deno-version: v2.5.x
           cache: true
 
       - name: Publish to JSR
@@ -37,7 +39,9 @@ jobs:
 
       - uses: denoland/setup-deno@v2
         with:
-          deno-version: v2.6.x
+          # Pinned to 2.5.x due to x86_64-apple-darwin compile bug in 2.6.0
+          # See: https://github.com/denoland/deno/issues/31556
+          deno-version: v2.5.x
           cache: true
 
       - name: Setup Node.js
