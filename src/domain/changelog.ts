@@ -61,8 +61,9 @@ function formatCommit(commit: Commit, inBreakingSection = false): string {
       return `${summary}\n\n${body}`;
     }
 
-    // Non-breaking: collapsible on same line, no empty lines inside
-    return `${summary} <details><summary>Details</summary>\n${body}\n</details>`;
+    // Non-breaking: collapsible on same line, content indented to stay with list item
+    const indentedBody = body.split('\n').map((line) => `  ${line}`).join('\n');
+    return `${summary} <details><summary>Details</summary>\n${indentedBody}\n</details>`;
   }
 
   return summary;
