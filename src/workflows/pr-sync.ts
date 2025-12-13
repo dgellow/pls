@@ -126,17 +126,18 @@ export async function syncWorkflow(
 
 /**
  * Determine bump type from version change.
+ * Exported for testing.
  */
-function determineBumpType(
+export function determineBumpType(
   from: string,
   to: string,
 ): 'major' | 'minor' | 'patch' | 'transition' {
-  // Check for prerelease
-  if (to.includes('-')) {
+  // Check for prerelease transitions (to or from prerelease)
+  if (to.includes('-') || from.includes('-')) {
     return 'transition';
   }
 
-  const [fromMajor, fromMinor] = from.split('-')[0].split('.').map(Number);
+  const [fromMajor, fromMinor] = from.split('.').map(Number);
   const [toMajor, toMinor] = to.split('.').map(Number);
 
   if (toMajor > fromMajor) return 'major';
