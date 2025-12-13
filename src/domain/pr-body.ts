@@ -237,8 +237,6 @@ export function generatePRBody(
 
 This PR was automatically created by pls.
 
-### Changes
-
 ${changelog}
 
 ---

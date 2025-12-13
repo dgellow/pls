@@ -254,7 +254,6 @@ Deno.test('generatePRBody', async (t) => {
     assertEquals(body.includes('## Release 1.1.0'), true);
     assertEquals(body.includes('<!-- pls:options -->'), true);
     assertEquals(body.includes('**Current: 1.1.0**'), true);
-    assertEquals(body.includes('### Changes'), true);
     assertEquals(body.includes('Added feature X'), true);
     assertEquals(body.includes('Version Selection'), true);
   });

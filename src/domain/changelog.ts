@@ -79,7 +79,7 @@ function formatCommit(commit: Commit, inBreakingSection = false): string {
 function formatSection(type: string, commits: Commit[]): string {
   const label = TYPE_LABELS[type] || type;
   const items = commits.map((c) => formatCommit(c)).join('\n');
-  return `#### ${label}\n\n${items}`;
+  return `### ${label}\n\n${items}`;
 }
 
 /**
@@ -95,7 +95,7 @@ export function generateChangelog(bump: VersionBump): string {
   const breakingCommits = bump.commits.filter((c) => c.breaking);
   if (breakingCommits.length > 0) {
     const items = breakingCommits.map((c) => formatCommit(c, true)).join('\n');
-    sections.push(`#### ⚠️ Breaking Changes\n\n${items}`);
+    sections.push(`### ⚠️ Breaking Changes\n\n${items}`);
   }
 
   // Other sections in order
