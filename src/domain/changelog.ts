@@ -2,6 +2,9 @@
  * Changelog generation - convert commits to markdown.
  *
  * Pure functions, no I/O.
+ *
+ * NOTE: HTML formatting (<details>, <br>, indentation) is optimized for
+ * GitHub's markdown renderer. Other platforms may render differently.
  */
 
 import type { Commit, VersionBump } from './types.ts';
@@ -62,8 +65,9 @@ function formatCommit(commit: Commit, inBreakingSection = false): string {
     }
 
     // Non-breaking: collapsible on same line, content indented to stay with list item
+    // GitHub quirks: <details> on same line, content indented, empty line after </details>
     const indentedBody = body.split('\n').map((line) => `  ${line}`).join('\n');
-    return `${summary} <details><summary>Details</summary>\n${indentedBody}\n</details>`;
+    return `${summary} <details><summary>Details</summary>\n${indentedBody}\n  </details>\n`;
   }
 
   return summary;
