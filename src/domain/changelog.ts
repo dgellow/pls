@@ -38,22 +38,26 @@ const TYPE_ORDER = [
 
 /**
  * Format a single commit for changelog.
+ * @param inBreakingSection Whether this is shown in the dedicated breaking changes section
  */
-function formatCommit(commit: Commit): string {
+function formatCommit(commit: Commit, inBreakingSection = false): string {
   const scope = commit.scope ? `**${commit.scope}:** ` : '';
-  const breaking = commit.breaking ? '⚠️ BREAKING: ' : '';
+  // Only show breaking prefix if not already in breaking section
+  const breaking = (commit.breaking && !inBreakingSection) ? '⚠️ BREAKING: ' : '';
   const summary = `- ${breaking}${scope}${commit.description}`;
 
   // If commit has a body, show it
   if (commit.body && commit.body.trim()) {
-    const bodyLines = commit.body.trim().split('\n').map((line) => `  ${line}`).join('\n');
+    // Replace blank lines with <br> for GitHub markdown compatibility
+    const body = commit.body.trim().split(/\n\n+/).join('<br>\n');
 
-    // Breaking changes: show body directly (important to see)
-    // Non-breaking: use collapsible section
+    // Breaking changes: show body directly (important to see), no indentation
     if (commit.breaking) {
-      return `${summary}\n\n${bodyLines}`;
+      return `${summary}\n\n${body}`;
     }
-    return `${summary}\n  <details>\n  <summary>Details</summary>\n\n${bodyLines}\n\n  </details>`;
+
+    // Non-breaking: collapsible on same line, no empty lines inside
+    return `${summary} <details><summary>Details</summary>\n${body}\n</details>`;
   }
 
   return summary;
@@ -64,7 +68,7 @@ function formatCommit(commit: Commit): string {
  */
 function formatSection(type: string, commits: Commit[]): string {
   const label = TYPE_LABELS[type] || type;
-  const items = commits.map(formatCommit).join('\n');
+  const items = commits.map((c) => formatCommit(c)).join('\n');
   return `### ${label}\n\n${items}`;
 }
 
@@ -80,7 +84,7 @@ export function generateChangelog(bump: VersionBump): string {
   // Breaking changes first (special section)
   const breakingCommits = bump.commits.filter((c) => c.breaking);
   if (breakingCommits.length > 0) {
-    const items = breakingCommits.map(formatCommit).join('\n');
+    const items = breakingCommits.map((c) => formatCommit(c, true)).join('\n');
     sections.push(`### ⚠️ Breaking Changes\n\n${items}`);
   }
 
