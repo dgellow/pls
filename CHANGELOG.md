@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.7.0-alpha.1
+
+### Features
+
+- json output
+- manifest bootstrap via PR
+
 Version changed from 0.6.1 to 0.7.0-alpha.0
 
 ## 0.6.1
@@ -10,9 +17,9 @@ Version changed from 0.6.1 to 0.7.0-alpha.0
 
 ## 0.6.0
 
-### Ã¢ÂÂ Ã¯Â¸Â Breaking Changes
+### ÃÂ¢ÃÂÃÂ ÃÂ¯ÃÂ¸ÃÂ Breaking Changes
 
-- Ã¢ÂÂ Ã¯Â¸Â BREAKING: complete rewrite following design.md architecture
+- ÃÂ¢ÃÂÃÂ ÃÂ¯ÃÂ¸ÃÂ BREAKING: complete rewrite following design.md architecture
 
 ### Features
 
