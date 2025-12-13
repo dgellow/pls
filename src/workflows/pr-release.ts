@@ -126,9 +126,12 @@ export async function releaseWorkflow(
     releaseSha = foundSha || headSha;
   }
 
-  // 4. Generate tag message
-  const commits = await git.getCommitsSince(null); // Get recent commits for changelog
-  const relevantCommits = filterReleasableCommits(commits).slice(0, 50);
+  // 4. Generate tag message - get commits since previous release
+  const fromTag = `v${fromVersion}`;
+  const fromTagInfo = await github.getTag(fromTag);
+  const fromSha = fromTagInfo?.sha || null;
+  const commits = await git.getCommitsSince(fromSha);
+  const relevantCommits = filterReleasableCommits(commits);
   const commitList = generateCommitList(relevantCommits);
 
   const tagMessage = generateReleaseTagMessage(
