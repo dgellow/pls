@@ -17,10 +17,11 @@ ${output.bold('USAGE:')}
   pls release [OPTIONS]
 
 ${output.bold('OPTIONS:')}
-  --owner <owner>    GitHub repository owner
-  --repo <repo>      GitHub repository name
-  --token <token>    GitHub token (or set GITHUB_TOKEN)
-  --help             Show this help
+  --owner <owner>       GitHub repository owner
+  --repo <repo>         GitHub repository name
+  --token <token>       GitHub token (or set GITHUB_TOKEN)
+  --json-output <path>  Write structured JSON result to file
+  --help                Show this help
 
 ${output.bold('DESCRIPTION:')}
   Creates annotated tag and GitHub Release for the current version.
@@ -39,7 +40,7 @@ ${output.bold('EXAMPLES:')}
 export async function release(args: string[]): Promise<void> {
   const parsed = parseArgs(args, {
     boolean: ['help'],
-    string: ['owner', 'repo', 'token'],
+    string: ['owner', 'repo', 'token', 'json-output'],
   });
 
   if (parsed.help) {
@@ -85,6 +86,11 @@ export async function release(args: string[]): Promise<void> {
 
   // Execute workflow
   const result = await releaseWorkflow(git, github, { config });
+
+  // Write JSON output if requested
+  if (parsed['json-output']) {
+    await output.writeJsonOutput(parsed['json-output'], result);
+  }
 
   // Output results
   if (!result.version) {

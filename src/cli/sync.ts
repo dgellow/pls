@@ -16,12 +16,13 @@ ${output.bold('USAGE:')}
   pls sync --pr <number> [OPTIONS]
 
 ${output.bold('OPTIONS:')}
-  --pr <number>      PR number to sync (required)
-  --base <branch>    Base branch (default: main)
-  --owner <owner>    GitHub repository owner
-  --repo <repo>      GitHub repository name
-  --token <token>    GitHub token (or set GITHUB_TOKEN)
-  --help             Show this help
+  --pr <number>         PR number to sync (required)
+  --base <branch>       Base branch (default: main)
+  --owner <owner>       GitHub repository owner
+  --repo <repo>         GitHub repository name
+  --token <token>       GitHub token (or set GITHUB_TOKEN)
+  --json-output <path>  Write structured JSON result to file
+  --help                Show this help
 
 ${output.bold('EXAMPLES:')}
   pls sync --pr=42            # Sync PR #42
@@ -30,7 +31,7 @@ ${output.bold('EXAMPLES:')}
 export async function sync(args: string[]): Promise<void> {
   const parsed = parseArgs(args, {
     boolean: ['help'],
-    string: ['pr', 'base', 'owner', 'repo', 'token'],
+    string: ['pr', 'base', 'owner', 'repo', 'token', 'json-output'],
     default: {
       base: 'main',
     },
@@ -90,6 +91,11 @@ export async function sync(args: string[]): Promise<void> {
     prNumber,
     baseBranch: parsed.base,
   });
+
+  // Write JSON output if requested
+  if (parsed['json-output']) {
+    await output.writeJsonOutput(parsed['json-output'], result);
+  }
 
   // Output results
   if (!result.synced) {

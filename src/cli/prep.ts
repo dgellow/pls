@@ -16,12 +16,13 @@ ${output.bold('USAGE:')}
   pls prep [OPTIONS]
 
 ${output.bold('OPTIONS:')}
-  --execute          Actually create/update (default is dry-run)
-  --base <branch>    Base branch (default: main)
-  --owner <owner>    GitHub repository owner
-  --repo <repo>      GitHub repository name
-  --token <token>    GitHub token (or set GITHUB_TOKEN)
-  --help             Show this help
+  --execute             Actually create/update (default is dry-run)
+  --base <branch>       Base branch (default: main)
+  --owner <owner>       GitHub repository owner
+  --repo <repo>         GitHub repository name
+  --token <token>       GitHub token (or set GITHUB_TOKEN)
+  --json-output <path>  Write structured JSON result to file
+  --help                Show this help
 
 ${output.bold('EXAMPLES:')}
   pls prep                    # Dry run
@@ -31,7 +32,7 @@ ${output.bold('EXAMPLES:')}
 export async function prep(args: string[]): Promise<void> {
   const parsed = parseArgs(args, {
     boolean: ['help', 'execute'],
-    string: ['base', 'owner', 'repo', 'token'],
+    string: ['base', 'owner', 'repo', 'token', 'json-output'],
     default: {
       base: 'main',
     },
@@ -77,6 +78,11 @@ export async function prep(args: string[]): Promise<void> {
     releaseBranch: 'pls-release',
     dryRun: !parsed.execute,
   });
+
+  // Write JSON output if requested
+  if (parsed['json-output']) {
+    await output.writeJsonOutput(parsed['json-output'], result);
+  }
 
   // Output results
   if (result.bootstrap) {

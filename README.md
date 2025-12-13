@@ -169,6 +169,34 @@ import { VERSION } from './version_info.ts';
 console.log(`My app v${VERSION}`);
 ```
 
+## JSON Output
+
+All commands support `--json-output <path>` to write structured results to a file:
+
+```bash
+pls prep --execute --json-output result.json
+```
+
+The JSON includes all workflow data, including URLs when available:
+
+```json
+{
+  "pr": {
+    "number": 42,
+    "title": "chore: release v1.2.3",
+    "url": "https://github.com/owner/repo/pull/42"
+  },
+  "bump": {
+    "from": "1.2.2",
+    "to": "1.2.3",
+    "type": "patch"
+  },
+  "dryRun": false
+}
+```
+
+Human-readable output still goes to stdout.
+
 ## What It Does
 
 1. Detects commits since last release

@@ -35,10 +35,11 @@ ${output.bold('USAGE:')}
   pls transition <target>    Transition between stages
 
 ${output.bold('OPTIONS:')}
-  --execute          Actually apply changes (default is dry-run)
-  --push             Push after local release
-  --help             Show this help
-  --version          Show version
+  --execute             Actually apply changes (default is dry-run)
+  --push                Push after local release
+  --json-output <path>  Write structured JSON result to file
+  --help                Show this help
+  --version             Show version
 
 ${output.bold('TRANSITION TARGETS:')}
   alpha, beta, rc, stable
@@ -87,6 +88,7 @@ async function main(): Promise<void> {
 async function handleLocalRelease(args: string[]): Promise<void> {
   const parsed = parseArgs(args, {
     boolean: ['help', 'version', 'execute', 'push'],
+    string: ['json-output'],
   });
 
   if (parsed.help) {
@@ -107,6 +109,11 @@ async function handleLocalRelease(args: string[]): Promise<void> {
     dryRun: !parsed.execute,
     push: parsed.push,
   });
+
+  // Write JSON output if requested
+  if (parsed['json-output']) {
+    await output.writeJsonOutput(parsed['json-output'], result);
+  }
 
   if (!result.bump) {
     output.warn('No changes to release');
@@ -129,6 +136,7 @@ async function handleLocalRelease(args: string[]): Promise<void> {
 async function handleTransition(args: string[]): Promise<void> {
   const parsed = parseArgs(args, {
     boolean: ['help', 'execute', 'push', 'major', 'minor', 'patch'],
+    string: ['json-output'],
   });
 
   if (parsed.help || parsed._.length === 0) {
@@ -145,11 +153,12 @@ ${output.bold('TARGETS:')}
   stable             Graduate to stable release
 
 ${output.bold('OPTIONS:')}
-  --execute          Actually apply changes
-  --push             Push after transition
-  --major            Major version bump when starting cycle
-  --minor            Minor version bump when starting cycle (default)
-  --patch            Patch version bump when starting cycle
+  --execute             Actually apply changes
+  --push                Push after transition
+  --major               Major version bump when starting cycle
+  --minor               Minor version bump when starting cycle (default)
+  --patch               Patch version bump when starting cycle
+  --json-output <path>  Write structured JSON result to file
 
 ${output.bold('EXAMPLES:')}
   pls transition alpha --execute       # 1.2.3 → 1.3.0-alpha.0
@@ -185,6 +194,11 @@ ${output.bold('EXAMPLES:')}
       push: parsed.push,
     },
   );
+
+  // Write JSON output if requested
+  if (parsed['json-output']) {
+    await output.writeJsonOutput(parsed['json-output'], result);
+  }
 
   output.info('Target', target);
   output.versionBump(result.bump!.from, result.bump!.to, 'transition');

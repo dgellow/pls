@@ -106,3 +106,13 @@ export function release(tag: string, url?: string | null): void {
 export function help(text: string): void {
   console.log(text);
 }
+
+/**
+ * Write structured JSON output to a file.
+ */
+export async function writeJsonOutput(
+  path: string,
+  data: unknown,
+): Promise<void> {
+  await Deno.writeTextFile(path, JSON.stringify(data, null, 2) + '\n');
+}

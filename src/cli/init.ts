@@ -21,6 +21,7 @@ ${output.bold('OPTIONS:')}
   --base <branch>        Base branch (default: main)
   --target <branch>      Target branch for releases (default: main)
   --strategy <type>      Branch strategy: simple or next
+  --json-output <path>   Write structured JSON result to file
   --help                 Show this help
 
 ${output.bold('DESCRIPTION:')}
@@ -39,7 +40,7 @@ ${output.bold('EXAMPLES:')}
 export async function init(args: string[]): Promise<void> {
   const parsed = parseArgs(args, {
     boolean: ['help', 'execute'],
-    string: ['version', 'version-file', 'base', 'target', 'strategy'],
+    string: ['version', 'version-file', 'base', 'target', 'strategy', 'json-output'],
   });
 
   if (parsed.help) {
@@ -93,6 +94,11 @@ export async function init(args: string[]): Promise<void> {
     config: Object.keys(config).length > 0 ? config : undefined,
     dryRun: !parsed.execute,
   });
+
+  // Write JSON output if requested
+  if (parsed['json-output']) {
+    await output.writeJsonOutput(parsed['json-output'], result);
+  }
 
   // Output results
   output.info('Version', result.version);

@@ -5,6 +5,9 @@
   "exports": {
     ".": "./src/cli/main.ts"
   },
+  "exclude": [
+    "test-monorepo/"
+  ],
   "tasks": {
     "dev": "deno run -A src/cli/main.ts",
     "test": "deno test -A",
