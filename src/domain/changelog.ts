@@ -42,7 +42,21 @@ const TYPE_ORDER = [
 function formatCommit(commit: Commit): string {
   const scope = commit.scope ? `**${commit.scope}:** ` : '';
   const breaking = commit.breaking ? '⚠️ BREAKING: ' : '';
-  return `- ${breaking}${scope}${commit.description}`;
+  const summary = `- ${breaking}${scope}${commit.description}`;
+
+  // If commit has a body, show it
+  if (commit.body && commit.body.trim()) {
+    const bodyLines = commit.body.trim().split('\n').map((line) => `  ${line}`).join('\n');
+
+    // Breaking changes: show body directly (important to see)
+    // Non-breaking: use collapsible section
+    if (commit.breaking) {
+      return `${summary}\n\n${bodyLines}`;
+    }
+    return `${summary}\n  <details>\n  <summary>Details</summary>\n\n${bodyLines}\n\n  </details>`;
+  }
+
+  return summary;
 }
 
 /**
