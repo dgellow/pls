@@ -43,13 +43,18 @@ const TYPE_ORDER = [
 function formatCommit(commit: Commit, inBreakingSection = false): string {
   const scope = commit.scope ? `**${commit.scope}:** ` : '';
   // Only show breaking prefix if not already in breaking section
-  const breaking = (commit.breaking && !inBreakingSection) ? '⚠️ BREAKING: ' : '';
+  const breaking = commit.breaking && !inBreakingSection ? '⚠️ BREAKING: ' : '';
   const summary = `- ${breaking}${scope}${commit.description}`;
 
   // If commit has a body, show it
   if (commit.body && commit.body.trim()) {
-    // Replace blank lines with <br> for GitHub markdown compatibility
-    const body = commit.body.trim().split(/\n\n+/).join('<br>\n');
+    // Escape HTML entities, then replace blank lines with <br> for GitHub markdown
+    const escaped = commit.body
+      .trim()
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+    const body = escaped.split(/\n\n+/).join('<br>\n');
 
     // Breaking changes: show body directly (important to see), no indentation
     if (commit.breaking) {
