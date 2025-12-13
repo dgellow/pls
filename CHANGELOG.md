@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.7.0-alpha.2
+
+### Chores
+
+- **ci:** update workflows
+- **ci:** update workflows
+- **ci:** update workflows
+- **ci:** update workflows
+
 ## 0.7.0-alpha.1
 
 ### Features
@@ -17,9 +26,9 @@ Version changed from 0.6.1 to 0.7.0-alpha.0
 
 ## 0.6.0
 
-### ÃÂ¢ÃÂÃÂ ÃÂ¯ÃÂ¸ÃÂ Breaking Changes
+### ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ ÃÂÃÂ¯ÃÂÃÂ¸ÃÂÃÂ Breaking Changes
 
-- ÃÂ¢ÃÂÃÂ ÃÂ¯ÃÂ¸ÃÂ BREAKING: complete rewrite following design.md architecture
+- ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ ÃÂÃÂ¯ÃÂÃÂ¸ÃÂÃÂ BREAKING: complete rewrite following design.md architecture
 
 ### Features
 
