@@ -1,0 +1,597 @@
+export const snapshot = {};
+
+snapshot[`Deno > init > versions.json 1`] = `
+'{
+  ".": {
+    "version": "1.0.0",
+    "versionFile": "src/version.ts"
+  }
+}
+'
+`;
+
+snapshot[`Deno > release > versions.json 1`] = `
+'{
+  ".": {
+    "version": "1.1.0",
+    "versionFile": "src/version.ts"
+  }
+}
+'
+`;
+
+snapshot[`Deno > release > deno.json 1`] = `
+'{
+  "name": "@test/app",
+  "version": "1.1.0"
+}
+'
+`;
+
+snapshot[`Deno > release > version.ts 1`] = `
+'// @pls-version
+export const VERSION = "1.1.0";
+'
+`;
+
+snapshot[`Deno > release > CHANGELOG.md 1`] = `
+"# Changelog
+
+## 1.1.0
+
+### Features
+
+- add greeting
+
+### Chores
+
+- initialize pls
+"
+`;
+
+snapshot[`Deno > release > commit message 1`] = `
+"chore: release v1.1.0
+
+---pls-release---
+version: 1.1.0
+from: 1.0.0
+type: minor
+---pls-release---"
+`;
+
+snapshot[`Deno > release2 > versions.json 1`] = `
+'{
+  ".": {
+    "version": "1.1.1",
+    "versionFile": "src/version.ts"
+  }
+}
+'
+`;
+
+snapshot[`Deno > release2 > deno.json 1`] = `
+'{
+  "name": "@test/app",
+  "version": "1.1.1"
+}
+'
+`;
+
+snapshot[`Deno > release2 > version.ts 1`] = `
+'// @pls-version
+export const VERSION = "1.1.1";
+'
+`;
+
+snapshot[`Deno > release2 > CHANGELOG.md 1`] = `
+"# Changelog
+
+## 1.1.1
+
+### Bug Fixes
+
+- correct greeting message
+
+## 1.1.0
+
+### Features
+
+- add greeting
+
+### Chores
+
+- initialize pls
+"
+`;
+
+snapshot[`Deno > release2 > commit message 1`] = `
+"chore: release v1.1.1
+
+---pls-release---
+version: 1.1.1
+from: 1.1.0
+type: patch
+---pls-release---"
+`;
+
+snapshot[`Node > init > versions.json 1`] = `
+'{
+  ".": {
+    "version": "2.0.0",
+    "versionFile": "src/version.ts"
+  }
+}
+'
+`;
+
+snapshot[`Node > release > versions.json 1`] = `
+'{
+  ".": {
+    "version": "2.0.1",
+    "versionFile": "src/version.ts"
+  }
+}
+'
+`;
+
+snapshot[`Node > release > package.json 1`] = `
+'{
+  "name": "test-app",
+  "version": "2.0.1"
+}
+'
+`;
+
+snapshot[`Node > release > version.ts 1`] = `
+'// @pls-version
+export const VERSION = "2.0.1";
+'
+`;
+
+snapshot[`Node > release > CHANGELOG.md 1`] = `
+"# Changelog
+
+## 2.0.1
+
+### Bug Fixes
+
+- resolve crash on startup
+
+### Chores
+
+- initialize pls
+"
+`;
+
+snapshot[`Node > release > commit message 1`] = `
+"chore: release v2.0.1
+
+---pls-release---
+version: 2.0.1
+from: 2.0.0
+type: patch
+---pls-release---"
+`;
+
+snapshot[`Node > release2 > versions.json 1`] = `
+'{
+  ".": {
+    "version": "2.1.0",
+    "versionFile": "src/version.ts"
+  }
+}
+'
+`;
+
+snapshot[`Node > release2 > package.json 1`] = `
+'{
+  "name": "test-app",
+  "version": "2.1.0"
+}
+'
+`;
+
+snapshot[`Node > release2 > version.ts 1`] = `
+'// @pls-version
+export const VERSION = "2.1.0";
+'
+`;
+
+snapshot[`Node > release2 > CHANGELOG.md 1`] = `
+"# Changelog
+
+## 2.1.0
+
+### Features
+
+- add new feature
+
+## 2.0.1
+
+### Bug Fixes
+
+- resolve crash on startup
+
+### Chores
+
+- initialize pls
+"
+`;
+
+snapshot[`Node > release2 > commit message 1`] = `
+"chore: release v2.1.0
+
+---pls-release---
+version: 2.1.0
+from: 2.0.1
+type: minor
+---pls-release---"
+`;
+
+snapshot[`Go > init > versions.json 1`] = `
+'{
+  ".": {
+    "version": "1.0.0",
+    "versionFile": "internal/version.go"
+  }
+}
+'
+`;
+
+snapshot[`Go > release > versions.json 1`] = `
+'{
+  ".": {
+    "version": "1.1.0",
+    "versionFile": "internal/version.go"
+  }
+}
+'
+`;
+
+snapshot[`Go > release > version.go 1`] = `
+'package internal
+
+// @pls-version
+const PackageVersion = "1.1.0"
+'
+`;
+
+snapshot[`Go > release > go.mod (unchanged) 1`] = `
+"module github.com/example/app
+
+go 1.22
+"
+`;
+
+snapshot[`Go > release > CHANGELOG.md 1`] = `
+"# Changelog
+
+## 1.1.0
+
+### Features
+
+- add HTTP client
+
+### Bug Fixes
+
+- handle edge case
+
+### Chores
+
+- initialize pls
+"
+`;
+
+snapshot[`Go > release > commit message 1`] = `
+"chore: release v1.1.0
+
+---pls-release---
+version: 1.1.0
+from: 1.0.0
+type: minor
+---pls-release---"
+`;
+
+snapshot[`Go > release2 > versions.json 1`] = `
+'{
+  ".": {
+    "version": "1.1.1",
+    "versionFile": "internal/version.go"
+  }
+}
+'
+`;
+
+snapshot[`Go > release2 > version.go 1`] = `
+'package internal
+
+// @pls-version
+const PackageVersion = "1.1.1"
+'
+`;
+
+snapshot[`Go > release2 > go.mod (unchanged) 1`] = `
+"module github.com/example/app
+
+go 1.22
+"
+`;
+
+snapshot[`Go > release2 > CHANGELOG.md 1`] = `
+"# Changelog
+
+## 1.1.1
+
+### Bug Fixes
+
+- return error from handler
+
+## 1.1.0
+
+### Features
+
+- add HTTP client
+
+### Bug Fixes
+
+- handle edge case
+
+### Chores
+
+- initialize pls
+"
+`;
+
+snapshot[`Go > release2 > commit message 1`] = `
+"chore: release v1.1.1
+
+---pls-release---
+version: 1.1.1
+from: 1.1.0
+type: patch
+---pls-release---"
+`;
+
+snapshot[`Python > init > versions.json 1`] = `
+'{
+  ".": {
+    "version": "0.1.0",
+    "versionFile": "src/mypackage/_version.py"
+  }
+}
+'
+`;
+
+snapshot[`Python > release > versions.json 1`] = `
+'{
+  ".": {
+    "version": "0.2.0",
+    "versionFile": "src/mypackage/_version.py"
+  }
+}
+'
+`;
+
+snapshot[`Python > release > _version.py 1`] = `
+'# @pls-version
+__version__ = "0.2.0"
+'
+`;
+
+snapshot[`Python > release > pyproject.toml (unchanged) 1`] = `
+'[project]
+name = "mypackage"
+version = "0.1.0"
+description = "A test package"
+requires-python = ">= 3.10"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+'
+`;
+
+snapshot[`Python > release > CHANGELOG.md 1`] = `
+"# Changelog
+
+## 0.2.0
+
+### Features
+
+- add new feature
+
+### Chores
+
+- initialize pls
+"
+`;
+
+snapshot[`Python > release > commit message 1`] = `
+"chore: release v0.2.0
+
+---pls-release---
+version: 0.2.0
+from: 0.1.0
+type: minor
+---pls-release---"
+`;
+
+snapshot[`Python > release2 > versions.json 1`] = `
+'{
+  ".": {
+    "version": "0.2.1",
+    "versionFile": "src/mypackage/_version.py"
+  }
+}
+'
+`;
+
+snapshot[`Python > release2 > _version.py 1`] = `
+'# @pls-version
+__version__ = "0.2.1"
+'
+`;
+
+snapshot[`Python > release2 > pyproject.toml (unchanged) 1`] = `
+'[project]
+name = "mypackage"
+version = "0.1.0"
+description = "A test package"
+requires-python = ">= 3.10"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+'
+`;
+
+snapshot[`Python > release2 > CHANGELOG.md 1`] = `
+"# Changelog
+
+## 0.2.1
+
+### Bug Fixes
+
+- correct feature return type
+
+## 0.2.0
+
+### Features
+
+- add new feature
+
+### Chores
+
+- initialize pls
+"
+`;
+
+snapshot[`Python > release2 > commit message 1`] = `
+"chore: release v0.2.1
+
+---pls-release---
+version: 0.2.1
+from: 0.2.0
+type: patch
+---pls-release---"
+`;
+
+snapshot[`Multi > release > versions.json 1`] = `
+'{
+  ".": {
+    "version": "4.0.0",
+    "versionFile": "src/version.ts"
+  }
+}
+'
+`;
+
+snapshot[`Multi > release > deno.json 1`] = `
+'{
+  "name": "@test/multi",
+  "version": "4.0.0"
+}
+'
+`;
+
+snapshot[`Multi > release > package.json 1`] = `
+'{
+  "name": "test-multi",
+  "version": "4.0.0"
+}
+'
+`;
+
+snapshot[`Multi > release > version.ts 1`] = `
+'// @pls-version
+export const VERSION = "4.0.0";
+'
+`;
+
+snapshot[`Multi > release > CHANGELOG.md 1`] = `
+"# Changelog
+
+## 4.0.0
+
+### ⚠️ Breaking Changes
+
+- breaking redesign
+
+### Chores
+
+- initialize pls
+"
+`;
+
+snapshot[`Multi > release > commit message 1`] = `
+"chore: release v4.0.0
+
+---pls-release---
+version: 4.0.0
+from: 3.0.0
+type: major
+---pls-release---"
+`;
+
+snapshot[`Multi > release2 > versions.json 1`] = `
+'{
+  ".": {
+    "version": "4.1.0",
+    "versionFile": "src/version.ts"
+  }
+}
+'
+`;
+
+snapshot[`Multi > release2 > deno.json 1`] = `
+'{
+  "name": "@test/multi",
+  "version": "4.1.0"
+}
+'
+`;
+
+snapshot[`Multi > release2 > package.json 1`] = `
+'{
+  "name": "test-multi",
+  "version": "4.1.0"
+}
+'
+`;
+
+snapshot[`Multi > release2 > version.ts 1`] = `
+'// @pls-version
+export const VERSION = "4.1.0";
+'
+`;
+
+snapshot[`Multi > release2 > CHANGELOG.md 1`] = `
+"# Changelog
+
+## 4.1.0
+
+### Features
+
+- add utility helpers
+
+## 4.0.0
+
+### ⚠️ Breaking Changes
+
+- breaking redesign
+
+### Chores
+
+- initialize pls
+"
+`;
+
+snapshot[`Multi > release2 > commit message 1`] = `
+"chore: release v4.1.0
+
+---pls-release---
+version: 4.1.0
+from: 4.0.0
+type: minor
+---pls-release---"
+`;

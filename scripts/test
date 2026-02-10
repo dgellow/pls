@@ -1,4 +1,4 @@
 #!/bin/sh
 set -e
 
-deno test -A
+deno test -A "$@"
