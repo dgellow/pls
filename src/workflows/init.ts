@@ -7,7 +7,9 @@
 
 import type { LocalGit } from '../clients/local-git.ts';
 import type { PlsConfig } from '../domain/config.ts';
-import { createInitialVersionsManifest, extractVersionFromManifest } from '../domain/files.ts';
+import type { ManifestPath } from '../domain/manifest.ts';
+import { detectManifest } from '../domain/manifest.ts';
+import { createInitialVersionsManifest } from '../domain/files.ts';
 import { generateConfigFile } from '../domain/config.ts';
 import { generateReleaseTagMessage } from '../domain/release-metadata.ts';
 import { PlsError } from '../lib/error.ts';
@@ -23,7 +25,7 @@ export interface InitResult {
 export interface InitOptions {
   /** Override detected version */
   version?: string;
-  /** TypeScript version file to track */
+  /** Version file to track (any language, uses @pls-version marker) */
   versionFile?: string;
   /** Create config file with non-default settings */
   config?: Partial<PlsConfig>;
@@ -32,7 +34,7 @@ export interface InitOptions {
 }
 
 export interface DetectedProject {
-  manifest: 'deno.json' | 'package.json' | null;
+  manifest: ManifestPath | null;
   version: string | null;
   workspaces: string[];
 }
@@ -41,34 +43,23 @@ export interface DetectedProject {
  * Detect project type and version from manifest files.
  */
 export async function detectProject(git: LocalGit): Promise<DetectedProject> {
-  // Try deno.json first
-  const denoJson = await git.readFile('deno.json');
-  if (denoJson) {
-    const version = extractVersionFromManifest(denoJson);
-    const workspaces = extractWorkspaces(denoJson);
-    return {
-      manifest: 'deno.json',
-      version,
-      workspaces,
-    };
+  const manifest = await detectManifest((p) => git.readFile(p));
+
+  if (!manifest) {
+    return { manifest: null, version: null, workspaces: [] };
   }
 
-  // Try package.json
-  const packageJson = await git.readFile('package.json');
-  if (packageJson) {
-    const version = extractVersionFromManifest(packageJson);
-    const workspaces = extractNodeWorkspaces(packageJson);
-    return {
-      manifest: 'package.json',
-      version,
-      workspaces,
-    };
-  }
+  // Extract workspaces (manifest-specific)
+  const workspaces = manifest.path === 'deno.json'
+    ? extractWorkspaces(manifest.content)
+    : manifest.path === 'package.json'
+    ? extractNodeWorkspaces(manifest.content)
+    : [];
 
   return {
-    manifest: null,
-    version: null,
-    workspaces: [],
+    manifest: manifest.path,
+    version: manifest.version,
+    workspaces,
   };
 }
 
@@ -167,10 +158,15 @@ export async function initWorkflow(
         { path: versionFile },
       );
     }
-    if (!content.includes('// @pls-version')) {
+    if (!content.includes('@pls-version')) {
       throw new PlsError(
-        `Version file missing magic comment. Add "// @pls-version" above your VERSION export.\n` +
-          `Example:\n  // @pls-version\n  export const VERSION = '${version}';`,
+        `Version file missing @pls-version marker.\n` +
+          `Add a comment containing @pls-version on the line above your version declaration.\n` +
+          `Examples:\n` +
+          `  // @pls-version           (TypeScript/Go/Java)\n` +
+          `  export const VERSION = '${version}';\n\n` +
+          `  # @pls-version            (Python/Ruby/Shell)\n` +
+          `  __version__ = '${version}'`,
         'VERSION_FILE_NO_MARKER',
         { path: versionFile },
       );

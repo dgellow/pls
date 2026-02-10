@@ -6,66 +6,10 @@ import { assertEquals } from '@std/assert';
 import {
   buildReleaseFiles,
   createInitialVersionsManifest,
-  extractVersionFromManifest,
   prependChangelog,
-  updateJsonVersion,
   updateVersionFile,
   updateVersionsManifest,
 } from './files.ts';
-
-Deno.test('extractVersionFromManifest', async (t) => {
-  await t.step('extracts version from deno.json', () => {
-    const content = JSON.stringify({ name: '@test/pkg', version: '1.2.3' });
-    assertEquals(extractVersionFromManifest(content), '1.2.3');
-  });
-
-  await t.step('extracts version from package.json', () => {
-    const content = JSON.stringify({ name: 'test', version: '0.1.0' });
-    assertEquals(extractVersionFromManifest(content), '0.1.0');
-  });
-
-  await t.step('returns null for missing version', () => {
-    const content = JSON.stringify({ name: 'test' });
-    assertEquals(extractVersionFromManifest(content), null);
-  });
-
-  await t.step('returns null for invalid JSON', () => {
-    assertEquals(extractVersionFromManifest('not json'), null);
-  });
-});
-
-Deno.test('updateJsonVersion', async (t) => {
-  await t.step('updates version in JSON', () => {
-    const content = JSON.stringify({ name: 'test', version: '1.0.0' }, null, 2);
-    const result = updateJsonVersion(content, '2.0.0');
-    const parsed = JSON.parse(result);
-
-    assertEquals(parsed.version, '2.0.0');
-    assertEquals(parsed.name, 'test');
-  });
-
-  await t.step('preserves formatting with trailing newline', () => {
-    const content = '{\n  "name": "test",\n  "version": "1.0.0"\n}';
-    const result = updateJsonVersion(content, '2.0.0');
-
-    assertEquals(result.includes('"version": "2.0.0"'), true);
-    assertEquals(result.endsWith('\n'), true);
-  });
-
-  await t.step('adds version field when missing', () => {
-    const content = JSON.stringify({ name: 'test' }, null, 2);
-    const result = updateJsonVersion(content, '1.0.0');
-    const parsed = JSON.parse(result);
-
-    assertEquals(parsed.version, '1.0.0');
-  });
-
-  await t.step('returns original on invalid JSON', () => {
-    const content = 'not valid json';
-    const result = updateJsonVersion(content, '1.0.0');
-    assertEquals(result, content);
-  });
-});
 
 Deno.test('updateVersionsManifest', async (t) => {
   await t.step('updates root version', () => {
@@ -241,13 +185,12 @@ Deno.test('createInitialVersionsManifest', async (t) => {
 });
 
 Deno.test('buildReleaseFiles', async (t) => {
-  await t.step('builds minimal release files', () => {
+  await t.step('builds minimal release files (no manifests)', () => {
     const { files, commitMessage } = buildReleaseFiles({
       version: '1.1.0',
       from: '1.0.0',
       type: 'minor',
-      denoJson: null,
-      packageJson: null,
+      manifests: [],
       versionsJson: JSON.stringify({ '.': { version: '1.0.0' } }),
       versionFile: null,
       changelog: '- New feature',
@@ -267,8 +210,7 @@ Deno.test('buildReleaseFiles', async (t) => {
       version: '1.1.0',
       from: '1.0.0',
       type: 'minor',
-      denoJson: JSON.stringify({ version: '1.0.0' }),
-      packageJson: null,
+      manifests: [{ path: 'deno.json', content: JSON.stringify({ version: '1.0.0' }) }],
       versionsJson: JSON.stringify({ '.': { version: '1.0.0' } }),
       versionFile: null,
       changelog: '- Change',
@@ -285,8 +227,7 @@ Deno.test('buildReleaseFiles', async (t) => {
       version: '1.1.0',
       from: '1.0.0',
       type: 'minor',
-      denoJson: null,
-      packageJson: JSON.stringify({ version: '1.0.0' }),
+      manifests: [{ path: 'package.json', content: JSON.stringify({ version: '1.0.0' }) }],
       versionsJson: JSON.stringify({ '.': { version: '1.0.0' } }),
       versionFile: null,
       changelog: '- Change',
@@ -303,8 +244,7 @@ Deno.test('buildReleaseFiles', async (t) => {
       version: '1.1.0',
       from: '1.0.0',
       type: 'minor',
-      denoJson: null,
-      packageJson: null,
+      manifests: [],
       versionsJson: JSON.stringify({ '.': { version: '1.0.0' } }),
       versionFile: {
         path: 'src/version.ts',
@@ -323,8 +263,7 @@ Deno.test('buildReleaseFiles', async (t) => {
       version: '1.1.0',
       from: '1.0.0',
       type: 'minor',
-      denoJson: null,
-      packageJson: null,
+      manifests: [],
       versionsJson: JSON.stringify({ '.': { version: '1.0.0' } }),
       versionFile: null,
       changelog: '## 1.1.0\n- New feature',
@@ -342,8 +281,10 @@ Deno.test('buildReleaseFiles', async (t) => {
       version: '2.0.0',
       from: '1.0.0',
       type: 'major',
-      denoJson: JSON.stringify({ name: 'test', version: '1.0.0' }),
-      packageJson: JSON.stringify({ name: 'test', version: '1.0.0' }),
+      manifests: [
+        { path: 'deno.json', content: JSON.stringify({ name: 'test', version: '1.0.0' }) },
+        { path: 'package.json', content: JSON.stringify({ name: 'test', version: '1.0.0' }) },
+      ],
       versionsJson: JSON.stringify({ '.': { version: '1.0.0' } }),
       versionFile: null,
       changelog: '- Breaking change',

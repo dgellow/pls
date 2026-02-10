@@ -5,59 +5,9 @@
  */
 
 import { assertEquals, assertStringIncludes } from '@std/assert';
-import { LocalGit } from '../clients/local-git.ts';
+import type { LocalGit } from '../clients/local-git.ts';
 import { localReleaseWorkflow, transitionWorkflow } from './local-release.ts';
-
-/**
- * Helper to create a test git repository with initial setup.
- */
-async function createTestRepo(): Promise<{
-  dir: string;
-  git: LocalGit;
-  cleanup: () => Promise<void>;
-}> {
-  const dir = await Deno.makeTempDir({ prefix: 'pls-workflow-test-' });
-
-  // Initialize git repo with explicit branch name
-  await run(dir, ['git', 'init', '-b', 'main']);
-
-  // Configure git user for commits
-  await run(dir, ['git', 'config', 'user.email', 'test@example.com']);
-  await run(dir, ['git', 'config', 'user.name', 'Test User']);
-
-  // Disable commit signing
-  await run(dir, ['git', 'config', 'commit.gpgsign', 'false']);
-  await run(dir, ['git', 'config', 'tag.gpgsign', 'false']);
-
-  const git = new LocalGit(dir);
-
-  const cleanup = async () => {
-    await Deno.remove(dir, { recursive: true });
-  };
-
-  return { dir, git, cleanup };
-}
-
-/**
- * Run a command in a directory.
- */
-async function run(cwd: string, cmd: string[]): Promise<string> {
-  const command = new Deno.Command(cmd[0], {
-    args: cmd.slice(1),
-    cwd,
-    stdout: 'piped',
-    stderr: 'piped',
-  });
-
-  const { code, stdout, stderr } = await command.output();
-
-  if (code !== 0) {
-    const error = new TextDecoder().decode(stderr);
-    throw new Error(`Command failed: ${cmd.join(' ')}\n${error}`);
-  }
-
-  return new TextDecoder().decode(stdout).trim();
-}
+import { createTestRepo } from '../../tests/e2e/test_helpers.ts';
 
 /**
  * Set up a repo with initial version and tag.

@@ -10,11 +10,8 @@ import type { FileChanges, PullRequest, VersionBump, VersionsManifest } from '..
 import { calculateBump } from '../domain/bump.ts';
 import { filterReleasableCommits } from '../domain/commits.ts';
 import { generateChangelog, generateReleaseNotes } from '../domain/changelog.ts';
-import {
-  buildReleaseFiles,
-  createInitialVersionsManifest,
-  extractVersionFromManifest,
-} from '../domain/files.ts';
+import { buildReleaseFiles, createInitialVersionsManifest } from '../domain/files.ts';
+import { detectManifest, readUpdatableManifests } from '../domain/manifest.ts';
 import { generateBootstrapPRBody, generatePRBody, getSelectedVersion } from '../domain/pr-body.ts';
 import { PlsError } from '../lib/error.ts';
 
@@ -90,8 +87,7 @@ export async function prepWorkflow(
   const changelogEntry = generateReleaseNotes(effectiveBump); // For CHANGELOG.md (with version header)
   const changelog = generateChangelog(effectiveBump); // For PR body (body only)
 
-  const denoJson = await github.readFile('deno.json', baseBranch);
-  const packageJson = await github.readFile('package.json', baseBranch);
+  const manifests = await readUpdatableManifests((p) => github.readFile(p, baseBranch));
   const existingChangelog = await github.readFile('CHANGELOG.md', baseBranch);
 
   // Get version file if configured
@@ -108,8 +104,7 @@ export async function prepWorkflow(
     version: selectedVersion,
     from: bump.from,
     type: bump.type,
-    denoJson,
-    packageJson,
+    manifests,
     versionsJson: versionsContent,
     versionFile,
     changelog: changelogEntry,
@@ -208,27 +203,18 @@ async function bootstrapWorkflow(
   const { baseBranch, releaseBranch, dryRun } = options;
 
   // 1. Detect project version from manifest (via GitHub API)
-  const denoJson = await github.readFile('deno.json', baseBranch);
-  const packageJson = await github.readFile('package.json', baseBranch);
+  const detected = await detectManifest((p) => github.readFile(p, baseBranch));
 
-  let version: string | null = null;
-  let manifest: string | null = null;
-
-  if (denoJson) {
-    version = extractVersionFromManifest(denoJson);
-    manifest = 'deno.json';
-  } else if (packageJson) {
-    version = extractVersionFromManifest(packageJson);
-    manifest = 'package.json';
-  }
-
-  if (!version || !manifest) {
+  if (!detected || !detected.version) {
     throw new PlsError(
       'Could not detect version from manifest.\n' +
         'Add "version" to your deno.json or package.json, or use `pls init --version=X.Y.Z`',
       'NO_VERSION_DETECTED',
     );
   }
+
+  const version = detected.version;
+  const manifest = detected.path;
 
   // 2. Build bootstrap files
   const files: FileChanges = new Map();

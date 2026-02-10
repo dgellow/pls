@@ -5,6 +5,8 @@
  */
 
 import type { FileChanges, ReleaseMetadata, VersionsManifest } from './types.ts';
+import type { UpdatableManifest } from './manifest.ts';
+import { updateManifestVersion } from './manifest.ts';
 import { generateReleaseCommitMessage } from './release-metadata.ts';
 
 const VERSION_MARKER = /@pls-version(?![ \t]+\w)/;
@@ -17,10 +19,8 @@ export interface BuildFilesInput {
   from: string;
   /** Bump type */
   type: 'major' | 'minor' | 'patch' | 'transition';
-  /** Current deno.json content (if exists) */
-  denoJson: string | null;
-  /** Current package.json content (if exists) */
-  packageJson: string | null;
+  /** Project manifests to update (deno.json, package.json, etc.) */
+  manifests: UpdatableManifest[];
   /** Current versions.json content (if exists) */
   versionsJson: string | null;
   /** Current version file content (if exists) */
@@ -42,26 +42,20 @@ export interface BuildFilesOutput {
 export function buildReleaseFiles(input: BuildFilesInput): BuildFilesOutput {
   const files: FileChanges = new Map();
 
-  // 1. Update deno.json
-  if (input.denoJson) {
-    const updated = updateJsonVersion(input.denoJson, input.version);
-    files.set('deno.json', updated);
+  // 1. Update project manifests (deno.json, package.json, etc.)
+  for (const manifest of input.manifests) {
+    const updated = updateManifestVersion(manifest.path, manifest.content, input.version);
+    files.set(manifest.path, updated);
   }
 
-  // 2. Update package.json
-  if (input.packageJson) {
-    const updated = updateJsonVersion(input.packageJson, input.version);
-    files.set('package.json', updated);
-  }
-
-  // 3. Update .pls/versions.json
+  // 2. Update .pls/versions.json
   const versionsJson = updateVersionsManifest(
     input.versionsJson,
     input.version,
   );
   files.set('.pls/versions.json', versionsJson);
 
-  // 4. Update version file (if configured)
+  // 3. Update version file (if configured)
   if (input.versionFile) {
     const updated = updateVersionFile(input.versionFile.content, input.version);
     if (updated) {
@@ -69,7 +63,7 @@ export function buildReleaseFiles(input: BuildFilesInput): BuildFilesOutput {
     }
   }
 
-  // 5. Update CHANGELOG.md
+  // 4. Update CHANGELOG.md
   const changelog = prependChangelog(input.existingChangelog, input.changelog);
   files.set('CHANGELOG.md', changelog);
 
@@ -82,20 +76,6 @@ export function buildReleaseFiles(input: BuildFilesInput): BuildFilesOutput {
   const commitMessage = generateReleaseCommitMessage(metadata);
 
   return { files, commitMessage };
-}
-
-/**
- * Update version in JSON file (deno.json or package.json).
- */
-export function updateJsonVersion(content: string, version: string): string {
-  try {
-    const json = JSON.parse(content);
-    json.version = version;
-    return JSON.stringify(json, null, 2) + '\n';
-  } catch {
-    // If parsing fails, return original
-    return content;
-  }
 }
 
 /**
@@ -191,16 +171,4 @@ export function createInitialVersionsManifest(
     },
   };
   return JSON.stringify(manifest, null, 2) + '\n';
-}
-
-/**
- * Extract version from deno.json or package.json content.
- */
-export function extractVersionFromManifest(content: string): string | null {
-  try {
-    const json = JSON.parse(content);
-    return json.version || null;
-  } catch {
-    return null;
-  }
 }

@@ -2,8 +2,9 @@
 
 ## What is PLS?
 
-A release automation tool built with Deno. Detects commits, calculates semantic version bumps,
-creates tags and GitHub releases. Uses pluggable storage backends (local JSON or GitHub releases).
+A language-agnostic release automation tool built with Deno. Detects commits, calculates semantic
+version bumps, creates tags and GitHub releases. Works with any ecosystem through the `@pls-version`
+marker mechanism (see RATIONALE.md).
 
 ## Core Principles (In Order of Priority)
 
@@ -81,10 +82,11 @@ src/
 │   ├── pr-release.ts   # Post-merge release creation
 │   └── local-release.ts # Local release workflow
 ├── domain/
+│   ├── manifest.ts     # Ecosystem manifest detection, reading, version update
 │   ├── bump.ts         # Version bump calculation
 │   ├── commits.ts      # Commit parsing
 │   ├── changelog.ts    # Changelog generation
-│   ├── files.ts        # Release file building
+│   ├── files.ts        # Release file orchestration (@pls-version, changelog, versions.json)
 │   ├── pr-body.ts      # PR body generation/parsing
 │   ├── config.ts       # Configuration handling
 │   ├── release-metadata.ts # Structured metadata format
@@ -98,6 +100,27 @@ src/
 │   └── semver.ts       # Semantic version utilities
 └── version_info.ts     # VERSION constant (auto-updated)
 ```
+
+### Module Dependency Rules
+
+Modules have strict one-way dependencies. Never introduce circular imports.
+
+```
+cli/ → workflows/ → domain/ → lib/
+                  → clients/
+```
+
+Within `domain/`, the key split is:
+
+- **`manifest.ts`** — Self-contained (zero sibling imports). Owns all ecosystem-specific manifest
+  knowledge: detection, reading, version extraction, version update. When adding a new ecosystem,
+  this is the only file that changes.
+- **`files.ts`** — Orchestrates release file building. Imports from `manifest.ts` (one-way). Owns
+  pls-internal formats: `.pls/versions.json`, `@pls-version` marker files, `CHANGELOG.md`.
+
+This separation matters: ecosystem-specific logic (how to detect and update manifests) is isolated
+from release orchestration logic (what files to build for a release). Adding Rust/Python/Java
+support means touching `manifest.ts` only.
 
 ### Key Interfaces
 
@@ -327,14 +350,16 @@ the certificate error as a failure - bypass it and continue testing.
 
 ## Decision Log
 
-| Decision                   | Rationale                                                  |
-| -------------------------- | ---------------------------------------------------------- |
-| Deno over Node             | ESM-first, built-in TypeScript, better tooling             |
-| Storage abstraction        | Enables offline mode, testing, different backends          |
-| No config files            | Complexity without benefit for MVP; convention over config |
-| Structured commit metadata | Reliability over fragile regex parsing                     |
-| Git CLI for local ops      | More reliable than libgit2 bindings; GitHub API for remote |
-| Dry-run by default         | Safety first; explicit --execute required for mutations    |
+| Decision                   | Rationale                                                   |
+| -------------------------- | ----------------------------------------------------------- |
+| Deno over Node             | ESM-first, built-in TypeScript, better tooling              |
+| Storage abstraction        | Enables offline mode, testing, different backends           |
+| No config files            | Complexity without benefit for MVP; convention over config  |
+| Structured commit metadata | Reliability over fragile regex parsing                      |
+| Git CLI for local ops      | More reliable than libgit2 bindings; GitHub API for remote  |
+| Dry-run by default         | Safety first; explicit --execute required for mutations     |
+| `@pls-version` marker      | One mechanism for all languages; no format-specific parsers |
+| manifest.ts self-contained | Zero circular deps; adding ecosystems touches one file      |
 
 ## Anti-Patterns (Do Not Do These)
 

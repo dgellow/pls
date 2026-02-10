@@ -17,7 +17,7 @@ ${output.bold('USAGE:')}
 ${output.bold('OPTIONS:')}
   --execute              Actually create files (default is dry-run)
   --version <version>    Override detected version
-  --version-file <path>  TypeScript file with VERSION export
+  --version-file <path>  Source file with @pls-version marker
   --base <branch>        Base branch (default: main)
   --target <branch>      Target branch for releases (default: main)
   --strategy <type>      Branch strategy: simple or next
@@ -26,15 +26,17 @@ ${output.bold('OPTIONS:')}
 
 ${output.bold('DESCRIPTION:')}
   Initializes pls for a repository by:
-  1. Detecting version from deno.json or package.json
-  2. Creating .pls/versions.json
-  3. Creating initial tag v{version}
+  1. Detecting project type (deno.json, package.json, go.mod)
+  2. Reading version from manifest (or requiring --version for Go)
+  3. Creating .pls/versions.json
+  4. Creating initial tag v{version}
 
 ${output.bold('EXAMPLES:')}
   pls init                           # Dry run, detect version
   pls init --execute                 # Initialize with detected version
   pls init --version=1.0.0 --execute # Initialize with specific version
-  pls init --version-file=src/version.ts --execute
+  pls init --version-file=src/version.ts --execute  # TypeScript
+  pls init --version=0.1.0 --version-file=internal/version.go --execute  # Go
 `;
 
 export async function init(args: string[]): Promise<void> {
@@ -59,12 +61,16 @@ export async function init(args: string[]): Promise<void> {
     output.info('Detected', project.manifest);
     if (project.version) {
       output.info('Version', project.version);
+    } else if (!parsed.version) {
+      output.warn(
+        `${project.manifest} does not contain a version field. Use --version to specify.`,
+      );
     }
     if (project.workspaces.length > 0) {
       output.info('Workspaces', project.workspaces.join(', '));
     }
   } else {
-    output.warn('No deno.json or package.json found');
+    output.warn('No project manifest found');
     if (!parsed.version) {
       throw new PlsError(
         'No manifest found. Use --version to specify initial version',

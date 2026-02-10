@@ -10,6 +10,7 @@ import { calculateBump, calculateTransition } from '../domain/bump.ts';
 import { filterReleasableCommits } from '../domain/commits.ts';
 import { generateChangelog, generateReleaseNotes } from '../domain/changelog.ts';
 import { buildReleaseFiles } from '../domain/files.ts';
+import { readUpdatableManifests } from '../domain/manifest.ts';
 import { generateReleaseTagMessage } from '../domain/release-metadata.ts';
 import { PlsError } from '../lib/error.ts';
 
@@ -87,8 +88,7 @@ export async function localReleaseWorkflow(
   const changelogEntry = generateReleaseNotes(bump); // For CHANGELOG.md (with version header)
   const changelog = generateChangelog(bump); // For tag message (body only)
 
-  const denoJson = await git.readFile('deno.json');
-  const packageJson = await git.readFile('package.json');
+  const manifests = await readUpdatableManifests((p) => git.readFile(p));
   const existingChangelog = await git.readFile('CHANGELOG.md');
 
   // Get version file if configured
@@ -105,8 +105,7 @@ export async function localReleaseWorkflow(
     version: bump.to,
     from: bump.from,
     type: bump.type,
-    denoJson,
-    packageJson,
+    manifests,
     versionsJson: versionsContent,
     versionFile,
     changelog: changelogEntry,
@@ -197,8 +196,7 @@ export async function transitionWorkflow(
   // 3. Build release files
   const changelog = `Transition to ${target}: ${from} → ${to}`;
 
-  const denoJson = await git.readFile('deno.json');
-  const packageJson = await git.readFile('package.json');
+  const manifests = await readUpdatableManifests((p) => git.readFile(p));
   const existingChangelog = await git.readFile('CHANGELOG.md');
 
   let versionFile: { path: string; content: string } | null = null;
@@ -214,8 +212,7 @@ export async function transitionWorkflow(
     version: to,
     from,
     type: 'transition',
-    denoJson,
-    packageJson,
+    manifests,
     versionsJson: versionsContent,
     versionFile,
     changelog,

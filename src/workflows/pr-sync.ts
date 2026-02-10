@@ -7,6 +7,7 @@
 import type { GitHub } from '../clients/github.ts';
 import type { VersionsManifest } from '../domain/types.ts';
 import { buildReleaseFiles } from '../domain/files.ts';
+import { readUpdatableManifests } from '../domain/manifest.ts';
 import { getSelectedVersion, updatePRBody } from '../domain/pr-body.ts';
 import { PlsError } from '../lib/error.ts';
 
@@ -65,8 +66,7 @@ export async function syncWorkflow(
   }
 
   // 6. Build files for new version
-  const denoJson = await github.readFile('deno.json', baseBranch);
-  const packageJson = await github.readFile('package.json', baseBranch);
+  const manifests = await readUpdatableManifests((p) => github.readFile(p, baseBranch));
   const existingChangelog = await github.readFile('CHANGELOG.md', baseBranch);
 
   // Get version file if configured
@@ -89,8 +89,7 @@ export async function syncWorkflow(
     version: selectedVersion,
     from: fromVersion,
     type: bumpType,
-    denoJson,
-    packageJson,
+    manifests,
     versionsJson: versionsContent,
     versionFile,
     changelog,

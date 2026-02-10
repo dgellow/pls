@@ -1,6 +1,6 @@
 # pls
 
-Release automation tool for Deno/TypeScript projects.
+Release automation that works with any language. See [RATIONALE.md](RATIONALE.md) for why.
 
 ## Usage
 
@@ -140,18 +140,27 @@ The release PR always has exactly ONE commit. When the selection changes:
 3. Branch is force-pushed
 4. PR title and description are updated
 
-## TypeScript Version File
+## Version File
 
-Keep a `VERSION` constant in sync with your `deno.json`:
+The `@pls-version` marker keeps a version constant in your source code in sync with releases. It
+works with any language -- pls finds the marker comment and replaces the semver on the next line:
 
 ```typescript
-// src/version_info.ts
 // @pls-version
 export const VERSION = '1.2.3';
 ```
 
-The magic comment `// @pls-version` tells pls to update this file during releases. Configure it
-during init or add to `.pls/versions.json`:
+```go
+// @pls-version
+var Version = "1.2.3"
+```
+
+```python
+# @pls-version
+__version__ = "1.2.3"
+```
+
+Configure during init or add to `.pls/versions.json`:
 
 ```json
 {
@@ -160,13 +169,6 @@ during init or add to `.pls/versions.json`:
     "versionFile": "src/version_info.ts"
   }
 }
-```
-
-**Usage:**
-
-```typescript
-import { VERSION } from './version_info.ts';
-console.log(`My app v${VERSION}`);
 ```
 
 ## JSON Output
@@ -201,7 +203,7 @@ Human-readable output still goes to stdout.
 
 1. Detects commits since last release
 2. Calculates version bump from conventional commits
-3. Updates version files (deno.json, package.json, CHANGELOG.md)
+3. Updates version files (manifests, `@pls-version` source files, CHANGELOG.md)
 4. Creates git tags
 5. Creates GitHub Releases (with `pls release`)
 
