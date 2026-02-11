@@ -1,9 +1,12 @@
 /**
- * Commit parsing - convert git log output to structured commits.
+ * Commit parsing - convert raw commit data to structured commits.
  *
  * Pure functions, no I/O.
+ *
+ * NOTE: parseGitLog is in clients/git/parse.ts (git-format-specific).
  */
 
+import type { RevisionId } from './vcs.ts';
 import type { Commit } from './types.ts';
 
 // Conventional commit pattern: type(scope)!: description
@@ -13,7 +16,7 @@ const COMMIT_REGEX = /^(\w+)(?:\(([^)]+)\))?(!)?: (.+)$/;
  * Parse a single commit message into structured format.
  */
 export function parseCommitMessage(
-  sha: string,
+  rev: RevisionId,
   message: string,
 ): Commit | null {
   const lines = message.split('\n');
@@ -24,12 +27,13 @@ export function parseCommitMessage(
   if (!match) {
     // Non-conventional commit - treat as chore
     return {
-      sha,
+      rev,
       type: 'chore',
       scope: null,
       description: firstLine,
       breaking: false,
       body: lines.slice(1).join('\n').trim() || null,
+      merge: false,
     };
   }
 
@@ -41,40 +45,14 @@ export function parseCommitMessage(
     (body?.includes('BREAKING CHANGE') ?? false);
 
   return {
-    sha,
+    rev,
     type: type.toLowerCase(),
     scope: scope || null,
     description,
     breaking,
     body,
+    merge: false,
   };
-}
-
-/**
- * Parse multiple commits from git log output.
- *
- * Expected format (use --format="%H%n%B%n---commit---"):
- * sha
- * message body
- * ---commit---
- */
-export function parseGitLog(output: string): Commit[] {
-  const commits: Commit[] = [];
-  const entries = output.split('---commit---').filter((e) => e.trim());
-
-  for (const entry of entries) {
-    const lines = entry.trim().split('\n');
-    const sha = lines[0]?.trim();
-    if (!sha) continue;
-
-    const message = lines.slice(1).join('\n').trim();
-    const commit = parseCommitMessage(sha, message);
-    if (commit) {
-      commits.push(commit);
-    }
-  }
-
-  return commits;
 }
 
 /**
@@ -87,7 +65,8 @@ export function filterReleasableCommits(commits: Commit[]): Commit[] {
     if (c.description.startsWith('release v')) return false;
     if (c.description.startsWith('chore: release')) return false;
 
-    // Skip merge commits (detected by message pattern)
+    // Skip merge commits (prefer structured field, fall back to message heuristic)
+    if (c.merge) return false;
     if (c.description.startsWith('Merge ')) return false;
 
     return true;

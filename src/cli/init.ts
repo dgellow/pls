@@ -3,7 +3,7 @@
  */
 
 import { parseArgs } from '@std/cli/parse-args';
-import { LocalGit } from '../clients/local-git.ts';
+import { LocalGit } from '../clients/git/local.ts';
 import { detectProject, initWorkflow } from '../workflows/init.ts';
 import { PlsError } from '../lib/error.ts';
 import * as output from './output.ts';

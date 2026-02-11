@@ -4,7 +4,7 @@
  * Syncs PR branch when user changes version selection.
  */
 
-import type { GitHub } from '../clients/github.ts';
+import type { CodeHost } from '../domain/vcs.ts';
 import type { VersionsManifest } from '../domain/types.ts';
 import { buildReleaseFiles } from '../domain/files.ts';
 import { readUpdatableManifests } from '../domain/manifest.ts';
@@ -26,13 +26,13 @@ export interface SyncOptions {
  * Execute pls sync workflow.
  */
 export async function syncWorkflow(
-  github: GitHub,
+  host: CodeHost,
   options: SyncOptions,
 ): Promise<SyncResult> {
   const { prNumber, baseBranch } = options;
 
   // 1. Get PR details
-  const pr = await github.getPR(prNumber);
+  const pr = await host.getPR(prNumber);
 
   // 2. Parse selected version from body
   const selectedVersion = getSelectedVersion(pr.body);
@@ -54,7 +54,7 @@ export async function syncWorkflow(
   }
 
   // 5. Read current state from base branch
-  const versionsContent = await github.readFile('.pls/versions.json', baseBranch);
+  const versionsContent = await host.readFile('.pls/versions.json', baseBranch);
   if (!versionsContent) {
     throw new PlsError('No .pls/versions.json found', 'NO_VERSIONS_MANIFEST');
   }
@@ -66,14 +66,14 @@ export async function syncWorkflow(
   }
 
   // 6. Build files for new version
-  const manifests = await readUpdatableManifests((p) => github.readFile(p, baseBranch));
-  const existingChangelog = await github.readFile('CHANGELOG.md', baseBranch);
+  const manifests = await readUpdatableManifests((p) => host.readFile(p, baseBranch));
+  const existingChangelog = await host.readFile('CHANGELOG.md', baseBranch);
 
   // Get version file if configured
   let versionFile: { path: string; content: string } | null = null;
   const versionFilePath = versions['.']?.versionFile;
   if (versionFilePath) {
-    const content = await github.readFile(versionFilePath, baseBranch);
+    const content = await host.readFile(versionFilePath, baseBranch);
     if (content) {
       versionFile = { path: versionFilePath, content };
     }
@@ -97,21 +97,21 @@ export async function syncWorkflow(
   });
 
   // 7. Create new commit from base branch
-  const baseSha = await github.getBranchSha(baseBranch);
-  if (!baseSha) {
+  const baseRev = await host.getBranchRevision(baseBranch);
+  if (!baseRev) {
     throw new PlsError(`Base branch ${baseBranch} not found`, 'BRANCH_NOT_FOUND');
   }
 
-  const commitSha = await github.commit(files, commitMessage, baseSha);
+  const commitRev = await host.commit(files, commitMessage, baseRev);
 
   // 8. Force update PR branch (single commit principle)
-  await github.pointBranch(pr.branch, commitSha, true);
+  await host.pointBranch(pr.branch, commitRev, true);
 
   // 9. Update PR title and body
   const newTitle = `chore: release v${selectedVersion}`;
   const newBody = updatePRBody(pr.body, selectedVersion);
 
-  await github.updatePR(prNumber, {
+  await host.updatePR(prNumber, {
     title: newTitle,
     body: newBody,
   });

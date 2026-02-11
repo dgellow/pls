@@ -4,8 +4,7 @@
  * Creates or updates a release PR.
  */
 
-import type { GitHub } from '../clients/github.ts';
-import type { LocalGit } from '../clients/local-git.ts';
+import type { CodeHost, LocalRepo } from '../domain/vcs.ts';
 import type { FileChanges, PullRequest, VersionBump, VersionsManifest } from '../domain/types.ts';
 import { calculateBump } from '../domain/bump.ts';
 import { filterReleasableCommits } from '../domain/commits.ts';
@@ -33,16 +32,16 @@ export interface PrepOptions {
  * Execute pls prep workflow.
  */
 export async function prepWorkflow(
-  git: LocalGit,
-  github: GitHub,
+  repo: LocalRepo,
+  host: CodeHost,
   options: PrepOptions,
 ): Promise<PrepResult> {
   const { baseBranch, releaseBranch, dryRun } = options;
 
   // 1. Read current state - bootstrap if no versions.json
-  const versionsContent = await github.readFile('.pls/versions.json', baseBranch);
+  const versionsContent = await host.readFile('.pls/versions.json', baseBranch);
   if (!versionsContent) {
-    return await bootstrapWorkflow(github, options);
+    return await bootstrapWorkflow(host, options);
   }
 
   const versions: VersionsManifest = JSON.parse(versionsContent);
@@ -54,11 +53,11 @@ export async function prepWorkflow(
     );
   }
 
-  // 2. Find release point (tag SHA or fallback)
-  const releaseSha = await findReleaseSha(git, github, currentVersion);
+  // 2. Find release point (tag revision or fallback)
+  const releaseRev = await findReleaseRevision(repo, host, currentVersion);
 
   // 3. Get commits since release
-  const allCommits = await git.getCommitsSince(releaseSha);
+  const allCommits = await repo.getCommitsSince(releaseRev);
   const commits = filterReleasableCommits(allCommits);
 
   if (commits.length === 0) {
@@ -72,7 +71,7 @@ export async function prepWorkflow(
   }
 
   // 5. Check for existing PR and preserve user's selection
-  const existingPR = await github.findPR(releaseBranch);
+  const existingPR = await host.findPR(releaseBranch);
   let selectedVersion = bump.to;
 
   if (existingPR) {
@@ -87,14 +86,14 @@ export async function prepWorkflow(
   const changelogEntry = generateReleaseNotes(effectiveBump); // For CHANGELOG.md (with version header)
   const changelog = generateChangelog(effectiveBump); // For PR body (body only)
 
-  const manifests = await readUpdatableManifests((p) => github.readFile(p, baseBranch));
-  const existingChangelog = await github.readFile('CHANGELOG.md', baseBranch);
+  const manifests = await readUpdatableManifests((p) => host.readFile(p, baseBranch));
+  const existingChangelog = await host.readFile('CHANGELOG.md', baseBranch);
 
   // Get version file if configured
   let versionFile: { path: string; content: string } | null = null;
   const versionFilePath = versions['.']?.versionFile;
   if (versionFilePath) {
-    const content = await github.readFile(versionFilePath, baseBranch);
+    const content = await host.readFile(versionFilePath, baseBranch);
     if (content) {
       versionFile = { path: versionFilePath, content };
     }
@@ -130,25 +129,25 @@ export async function prepWorkflow(
   }
 
   // 8. Create commit and update branch
-  const baseSha = await github.getBranchSha(baseBranch);
-  if (!baseSha) {
+  const baseRev = await host.getBranchRevision(baseBranch);
+  if (!baseRev) {
     throw new PlsError(`Base branch ${baseBranch} not found`, 'BRANCH_NOT_FOUND');
   }
 
-  const commitSha = await github.commit(files, commitMessage, baseSha);
-  await github.ensureBranch(releaseBranch, commitSha);
+  const commitRev = await host.commit(files, commitMessage, baseRev);
+  await host.ensureBranch(releaseBranch, commitRev);
 
   // 9. Create or update PR
   let pr: PullRequest;
 
   if (existingPR) {
-    await github.updatePR(existingPR.number, {
+    await host.updatePR(existingPR.number, {
       title: prTitle,
       body: prBody,
     });
     pr = { ...existingPR, title: prTitle, body: prBody };
   } else {
-    pr = await github.createPR({
+    pr = await host.createPR({
       title: prTitle,
       body: prBody,
       head: releaseBranch,
@@ -160,50 +159,47 @@ export async function prepWorkflow(
 }
 
 /**
- * Find the SHA for the current version.
+ * Find the revision for the current version.
  * Priority: tag → fallback commit search
  */
-async function findReleaseSha(
-  git: LocalGit,
-  github: GitHub,
+async function findReleaseRevision(
+  repo: LocalRepo,
+  host: CodeHost,
   version: string,
 ): Promise<string | null> {
   const tag = `v${version}`;
 
   // Try to get tag
-  const releaseTag = await github.getTag(tag);
+  const releaseTag = await host.getTag(tag);
 
   if (releaseTag) {
-    // Verify it's a pls release tag (has our marker)
     if (releaseTag.isPlsRelease) {
-      return releaseTag.sha;
+      return releaseTag.rev;
     }
-    // Tag exists but isn't ours - use fallback
     console.warn(`Tag ${tag} exists but is not a pls release tag`);
   }
 
-  // Fallback: search for commit that introduced this version
-  const sha = await git.findCommitByContent(version, '.pls/versions.json');
+  const rev = await repo.findCommitByContent(version, '.pls/versions.json');
 
-  if (!sha) {
+  if (!rev) {
     // No tag, no commit found - this might be first release
     return null;
   }
 
-  return sha;
+  return rev;
 }
 
 /**
  * Bootstrap workflow - creates initialization PR when no versions.json exists.
  */
 async function bootstrapWorkflow(
-  github: GitHub,
+  host: CodeHost,
   options: PrepOptions,
 ): Promise<PrepResult> {
   const { baseBranch, releaseBranch, dryRun } = options;
 
   // 1. Detect project version from manifest (via GitHub API)
-  const detected = await detectManifest((p) => github.readFile(p, baseBranch));
+  const detected = await detectManifest((p) => host.readFile(p, baseBranch));
 
   if (!detected || !detected.version) {
     throw new PlsError(
@@ -244,23 +240,23 @@ async function bootstrapWorkflow(
   }
 
   // 4. Create commit and branch
-  const baseSha = await github.getBranchSha(baseBranch);
-  if (!baseSha) {
+  const baseRev = await host.getBranchRevision(baseBranch);
+  if (!baseRev) {
     throw new PlsError(`Base branch ${baseBranch} not found`, 'BRANCH_NOT_FOUND');
   }
 
-  const commitSha = await github.commit(files, commitMessage, baseSha);
-  await github.ensureBranch(releaseBranch, commitSha);
+  const commitRev = await host.commit(files, commitMessage, baseRev);
+  await host.ensureBranch(releaseBranch, commitRev);
 
   // 5. Create or update PR
-  const existingPR = await github.findPR(releaseBranch);
+  const existingPR = await host.findPR(releaseBranch);
   let pr: PullRequest;
 
   if (existingPR) {
-    await github.updatePR(existingPR.number, { title: prTitle, body: prBody });
+    await host.updatePR(existingPR.number, { title: prTitle, body: prBody });
     pr = { ...existingPR, title: prTitle, body: prBody };
   } else {
-    pr = await github.createPR({
+    pr = await host.createPR({
       title: prTitle,
       body: prBody,
       head: releaseBranch,

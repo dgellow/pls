@@ -5,7 +5,7 @@
  * Detects existing version from manifest, creates versions.json and initial tag.
  */
 
-import type { LocalGit } from '../clients/local-git.ts';
+import type { LocalRepo } from '../domain/vcs.ts';
 import type { PlsConfig } from '../domain/config.ts';
 import type { ManifestPath } from '../domain/manifest.ts';
 import { detectManifest } from '../domain/manifest.ts';
@@ -42,8 +42,8 @@ export interface DetectedProject {
 /**
  * Detect project type and version from manifest files.
  */
-export async function detectProject(git: LocalGit): Promise<DetectedProject> {
-  const manifest = await detectManifest((p) => git.readFile(p));
+export async function detectProject(repo: LocalRepo): Promise<DetectedProject> {
+  const manifest = await detectManifest((p) => repo.readFile(p));
 
   if (!manifest) {
     return { manifest: null, version: null, workspaces: [] };
@@ -106,13 +106,13 @@ function extractNodeWorkspaces(content: string): string[] {
  * Execute pls init workflow.
  */
 export async function initWorkflow(
-  git: LocalGit,
+  repo: LocalRepo,
   options: InitOptions,
 ): Promise<InitResult> {
   const { dryRun } = options;
 
   // 1. Check if already initialized
-  const existingVersions = await git.readFile('.pls/versions.json');
+  const existingVersions = await repo.readFile('.pls/versions.json');
   if (existingVersions) {
     throw new PlsError(
       'pls is already initialized. Found .pls/versions.json',
@@ -121,7 +121,7 @@ export async function initWorkflow(
   }
 
   // 2. Detect project
-  const project = await detectProject(git);
+  const project = await detectProject(repo);
 
   // 3. Determine version
   let version = options.version;
@@ -150,7 +150,7 @@ export async function initWorkflow(
   // 4. Check for version file
   const versionFile = options.versionFile;
   if (versionFile) {
-    const content = await git.readFile(versionFile);
+    const content = await repo.readFile(versionFile);
     if (!content) {
       throw new PlsError(
         `Version file not found: ${versionFile}`,
@@ -198,14 +198,14 @@ export async function initWorkflow(
   }
 
   // 6. Write files
-  await git.writeFile('.pls/versions.json', versionsContent);
+  await repo.writeFile('.pls/versions.json', versionsContent);
 
   if (configContent) {
-    await git.writeFile('.pls/config.json', configContent);
+    await repo.writeFile('.pls/config.json', configContent);
   }
 
   // 7. Check if tag already exists
-  const tagExists = await git.tagExists(tag);
+  const tagExists = await repo.tagExists(tag);
 
   if (!tagExists) {
     // Create annotated tag
@@ -213,7 +213,7 @@ export async function initWorkflow(
       { version, from: '0.0.0', type: 'patch' },
       `Initial release at ${version}`,
     );
-    await git.createTag(tag, tagMessage);
+    await repo.createTag(tag, tagMessage);
   }
 
   return {

@@ -15,12 +15,13 @@ import {
 import type { Commit, VersionBump, VersionOption } from './types.ts';
 
 const makeCommit = (type: string, description: string): Commit => ({
-  sha: 'abc123',
+  rev: 'abc123',
   type,
   scope: null,
   description,
   breaking: false,
   body: null,
+  merge: false,
 });
 
 const makeBump = (from: string, to: string, type: 'major' | 'minor' | 'patch'): VersionBump => ({

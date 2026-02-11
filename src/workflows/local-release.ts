@@ -4,7 +4,7 @@
  * For developers who want to release directly without a PR.
  */
 
-import type { LocalGit } from '../clients/local-git.ts';
+import type { LocalRepo } from '../domain/vcs.ts';
 import type { VersionBump, VersionsManifest } from '../domain/types.ts';
 import { calculateBump, calculateTransition } from '../domain/bump.ts';
 import { filterReleasableCommits } from '../domain/commits.ts';
@@ -31,13 +31,13 @@ export interface LocalReleaseOptions {
  * Execute local release workflow.
  */
 export async function localReleaseWorkflow(
-  git: LocalGit,
+  repo: LocalRepo,
   options: LocalReleaseOptions,
 ): Promise<LocalReleaseResult> {
   const { dryRun, push } = options;
 
   // 1. Read current state
-  const versionsContent = await git.readFile('.pls/versions.json');
+  const versionsContent = await repo.readFile('.pls/versions.json');
   if (!versionsContent) {
     throw new PlsError(
       'No .pls/versions.json found. Run `pls init` first.',
@@ -56,10 +56,10 @@ export async function localReleaseWorkflow(
 
   // 2. Find release point
   const tag = `v${currentVersion}`;
-  const releaseSha = await git.getTagSha(tag);
+  const releaseRev = await repo.getTagRevision(tag);
 
   // 3. Get commits since release
-  const allCommits = await git.getCommitsSince(releaseSha);
+  const allCommits = await repo.getCommitsSince(releaseRev);
   const commits = filterReleasableCommits(allCommits);
 
   if (commits.length === 0) {
@@ -88,14 +88,14 @@ export async function localReleaseWorkflow(
   const changelogEntry = generateReleaseNotes(bump); // For CHANGELOG.md (with version header)
   const changelog = generateChangelog(bump); // For tag message (body only)
 
-  const manifests = await readUpdatableManifests((p) => git.readFile(p));
-  const existingChangelog = await git.readFile('CHANGELOG.md');
+  const manifests = await readUpdatableManifests((p) => repo.readFile(p));
+  const existingChangelog = await repo.readFile('CHANGELOG.md');
 
   // Get version file if configured
   let versionFile: { path: string; content: string } | null = null;
   const versionFilePath = versions['.']?.versionFile;
   if (versionFilePath) {
-    const content = await git.readFile(versionFilePath);
+    const content = await repo.readFile(versionFilePath);
     if (content) {
       versionFile = { path: versionFilePath, content };
     }
@@ -124,11 +124,11 @@ export async function localReleaseWorkflow(
 
   // 6. Write files
   for (const [path, content] of files) {
-    await git.writeFile(path, content);
+    await repo.writeFile(path, content);
   }
 
   // 7. Commit
-  await git.commit(commitMessage);
+  await repo.commit(commitMessage);
 
   // 8. Create tag
   const newTag = `v${bump.to}`;
@@ -136,12 +136,12 @@ export async function localReleaseWorkflow(
     { version: bump.to, from: bump.from, type: bump.type },
     `## Changes\n${changelog}`,
   );
-  await git.createTag(newTag, tagMessage);
+  await repo.createTag(newTag, tagMessage);
 
   // 9. Push if requested
   if (push) {
-    await git.push('HEAD');
-    await git.push(newTag);
+    await repo.push('HEAD');
+    await repo.push(newTag);
   }
 
   return {
@@ -157,7 +157,7 @@ export async function localReleaseWorkflow(
  * Execute transition workflow (pls transition).
  */
 export async function transitionWorkflow(
-  git: LocalGit,
+  repo: LocalRepo,
   target: 'alpha' | 'beta' | 'rc' | 'stable',
   bumpType: 'major' | 'minor' | 'patch',
   options: LocalReleaseOptions,
@@ -165,7 +165,7 @@ export async function transitionWorkflow(
   const { dryRun, push } = options;
 
   // 1. Read current version
-  const versionsContent = await git.readFile('.pls/versions.json');
+  const versionsContent = await repo.readFile('.pls/versions.json');
   if (!versionsContent) {
     throw new PlsError(
       'No .pls/versions.json found. Run `pls init` first.',
@@ -196,13 +196,13 @@ export async function transitionWorkflow(
   // 3. Build release files
   const changelog = `Transition to ${target}: ${from} → ${to}`;
 
-  const manifests = await readUpdatableManifests((p) => git.readFile(p));
-  const existingChangelog = await git.readFile('CHANGELOG.md');
+  const manifests = await readUpdatableManifests((p) => repo.readFile(p));
+  const existingChangelog = await repo.readFile('CHANGELOG.md');
 
   let versionFile: { path: string; content: string } | null = null;
   const versionFilePath = versions['.']?.versionFile;
   if (versionFilePath) {
-    const content = await git.readFile(versionFilePath);
+    const content = await repo.readFile(versionFilePath);
     if (content) {
       versionFile = { path: versionFilePath, content };
     }
@@ -231,11 +231,11 @@ export async function transitionWorkflow(
 
   // 4. Write files
   for (const [path, content] of files) {
-    await git.writeFile(path, content);
+    await repo.writeFile(path, content);
   }
 
   // 5. Commit
-  await git.commit(commitMessage);
+  await repo.commit(commitMessage);
 
   // 6. Create tag
   const newTag = `v${to}`;
@@ -243,12 +243,12 @@ export async function transitionWorkflow(
     { version: to, from, type: 'transition' },
     changelog,
   );
-  await git.createTag(newTag, tagMessage);
+  await repo.createTag(newTag, tagMessage);
 
   // 7. Push if requested
   if (push) {
-    await git.push('HEAD');
-    await git.push(newTag);
+    await repo.push('HEAD');
+    await repo.push(newTag);
   }
 
   return {

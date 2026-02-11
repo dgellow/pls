@@ -1,15 +1,17 @@
 /**
  * Local git client - wraps git CLI commands.
+ *
+ * Implements LocalRepo, BranchSyncable, and RemoteDetectable from domain/vcs.ts.
  */
 
 import { ensureDir } from '@std/fs';
 import { dirname, join } from '@std/path';
-import type { Commit } from '../domain/types.ts';
-import { parseGitLog } from '../domain/commits.ts';
-import type { GitClient } from './types.ts';
-import { PlsError } from '../lib/error.ts';
+import type { Commit } from '../../domain/types.ts';
+import type { BranchSyncable, LocalRepo, RemoteDetectable } from '../../domain/vcs.ts';
+import { parseGitLogWithParents } from './parse.ts';
+import { PlsError } from '../../lib/error.ts';
 
-export class LocalGit implements GitClient {
+export class LocalGit implements LocalRepo, BranchSyncable, RemoteDetectable {
   constructor(private cwd: string = Deno.cwd()) {}
 
   /**
@@ -71,17 +73,17 @@ export class LocalGit implements GitClient {
 
   // --- Git History ---
 
-  async getCommitsSince(sha: string | null): Promise<Commit[]> {
-    const range = sha ? `${sha}..HEAD` : 'HEAD';
-    const format = '%H%n%B%n---commit---';
+  async getCommitsSince(rev: string | null): Promise<Commit[]> {
+    const range = rev ? `${rev}..HEAD` : 'HEAD';
+    const format = '%H%n%P%n%B%n---commit---';
 
     const output = await this.execSafe(['log', range, `--format=${format}`]);
     if (!output) return [];
 
-    return parseGitLog(output);
+    return parseGitLogWithParents(output);
   }
 
-  async getHeadSha(): Promise<string> {
+  async getHeadRevision(): Promise<string> {
     return await this.exec(['rev-parse', 'HEAD']);
   }
 
@@ -91,8 +93,8 @@ export class LocalGit implements GitClient {
 
   // --- Tags ---
 
-  async getTagSha(tag: string): Promise<string | null> {
-    // Get the commit SHA the tag points to (dereference annotated tags)
+  async getTagRevision(tag: string): Promise<string | null> {
+    // Get the commit revision the tag points to (dereference annotated tags)
     return await this.execSafe(['rev-list', '-1', tag]);
   }
 
@@ -121,8 +123,8 @@ export class LocalGit implements GitClient {
     // Commit
     await this.exec(['commit', '-m', message]);
 
-    // Return new HEAD SHA
-    return await this.getHeadSha();
+    // Return new HEAD revision
+    return await this.getHeadRevision();
   }
 
   async createTag(name: string, message: string): Promise<void> {
@@ -137,16 +139,16 @@ export class LocalGit implements GitClient {
   // --- Additional utilities ---
 
   /**
-   * Check if a SHA exists in the repository.
+   * Check if a revision exists in the repository.
    */
-  async shaExists(sha: string): Promise<boolean> {
-    const result = await this.execSafe(['cat-file', '-t', sha]);
+  async revExists(rev: string): Promise<boolean> {
+    const result = await this.execSafe(['cat-file', '-t', rev]);
     return result === 'commit';
   }
 
   /**
    * Search for commit that changed a file to contain a specific string.
-   * Used for fallback SHA detection when tag is missing.
+   * Used for fallback revision detection when tag is missing.
    */
   async findCommitByContent(
     searchString: string,
@@ -168,9 +170,8 @@ export class LocalGit implements GitClient {
     return lines[0] || null;
   }
 
-  /**
-   * Get repository remote info.
-   */
+  // --- RemoteDetectable ---
+
   async getRemoteInfo(): Promise<{ owner: string; repo: string } | null> {
     const url = await this.execSafe(['remote', 'get-url', 'origin']);
     if (!url) return null;
@@ -190,26 +191,16 @@ export class LocalGit implements GitClient {
     return null;
   }
 
-  // --- Branch Sync Operations (Strategy B) ---
+  // --- BranchSyncable ---
 
-  /**
-   * Fetch from remote.
-   */
   async fetch(remote = 'origin'): Promise<void> {
     await this.exec(['fetch', remote]);
   }
 
-  /**
-   * Checkout and reset branch to a remote ref.
-   */
   async checkoutBranch(branch: string, fromRef: string): Promise<void> {
     await this.exec(['checkout', '-B', branch, fromRef]);
   }
 
-  /**
-   * Rebase current branch onto another branch.
-   * Returns true on success, false on failure.
-   */
   async rebase(onto: string): Promise<boolean> {
     const result = await this.execSafe(['rebase', onto]);
     if (result === null) {
@@ -220,10 +211,6 @@ export class LocalGit implements GitClient {
     return true;
   }
 
-  /**
-   * Push with force-with-lease (safe force push).
-   * Returns true on success, false on failure.
-   */
   async pushForceWithLease(remote: string, branch: string): Promise<boolean> {
     const result = await this.execSafe(['push', '--force-with-lease', remote, branch]);
     return result !== null;

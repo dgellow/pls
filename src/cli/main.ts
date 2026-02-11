@@ -17,7 +17,7 @@ import { init } from './init.ts';
 import { prep } from './prep.ts';
 import { sync } from './sync.ts';
 import { release } from './release.ts';
-import { LocalGit } from '../clients/local-git.ts';
+import { LocalGit } from '../clients/git/local.ts';
 import { localReleaseWorkflow, transitionWorkflow } from '../workflows/local-release.ts';
 import { PlsError } from '../lib/error.ts';
 import { VERSION } from '../version_info.ts';

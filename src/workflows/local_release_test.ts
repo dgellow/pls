@@ -5,7 +5,7 @@
  */
 
 import { assertEquals, assertStringIncludes } from '@std/assert';
-import type { LocalGit } from '../clients/local-git.ts';
+import type { LocalRepo } from '../domain/vcs.ts';
 import { localReleaseWorkflow, transitionWorkflow } from './local-release.ts';
 import { createTestRepo } from '../../tests/e2e/test_helpers.ts';
 
@@ -13,20 +13,20 @@ import { createTestRepo } from '../../tests/e2e/test_helpers.ts';
  * Set up a repo with initial version and tag.
  */
 async function setupVersionedRepo(
-  git: LocalGit,
+  repo: LocalRepo,
   version: string,
 ): Promise<void> {
   // Create versions.json
-  await git.writeFile(
+  await repo.writeFile(
     '.pls/versions.json',
     JSON.stringify({ '.': { version } }, null, 2),
   );
 
   // Create initial commit
-  await git.commit(`chore: init v${version}`);
+  await repo.commit(`chore: init v${version}`);
 
   // Create initial tag
-  await git.createTag(`v${version}`, `Release ${version}`);
+  await repo.createTag(`v${version}`, `Release ${version}`);
 }
 
 // --- Local Release Workflow ---

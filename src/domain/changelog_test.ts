@@ -12,12 +12,13 @@ const makeCommit = (
   scope: string | null = null,
   breaking = false,
 ): Commit => ({
-  sha: 'abc1234567890',
+  rev: 'abc1234567890',
   type,
   scope,
   description,
   breaking,
   body: null,
+  merge: false,
 });
 
 Deno.test('generateCommitList', async (t) => {

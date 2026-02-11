@@ -3,12 +3,8 @@
  */
 
 import { assertEquals } from '@std/assert';
-import {
-  filterReleasableCommits,
-  groupByType,
-  parseCommitMessage,
-  parseGitLog,
-} from './commits.ts';
+import { filterReleasableCommits, groupByType, parseCommitMessage } from './commits.ts';
+import { parseGitLog } from '../clients/git/parse.ts';
 import type { Commit } from './types.ts';
 
 Deno.test('parseCommitMessage', async (t) => {
@@ -86,7 +82,7 @@ feat: add feature
 ---commit---`;
     const commits = parseGitLog(log);
     assertEquals(commits.length, 1);
-    assertEquals(commits[0].sha, 'abc123');
+    assertEquals(commits[0].rev, 'abc123');
     assertEquals(commits[0].description, 'add feature');
     assertEquals(commits[0].type, 'feat');
   });
@@ -106,11 +102,11 @@ docs: update docs
 ---commit---`;
     const commits = parseGitLog(log);
     assertEquals(commits.length, 3);
-    assertEquals(commits[0].sha, 'abc123');
+    assertEquals(commits[0].rev, 'abc123');
     assertEquals(commits[0].type, 'feat');
-    assertEquals(commits[1].sha, 'def456');
+    assertEquals(commits[1].rev, 'def456');
     assertEquals(commits[1].type, 'fix');
-    assertEquals(commits[2].sha, 'ghi789');
+    assertEquals(commits[2].rev, 'ghi789');
     assertEquals(commits[2].type, 'docs');
   });
 
@@ -121,13 +117,14 @@ docs: update docs
 });
 
 Deno.test('filterReleasableCommits', async (t) => {
-  const makeCommit = (type: string, description: string): Commit => ({
-    sha: 'abc123',
+  const makeCommit = (type: string, description: string, merge = false): Commit => ({
+    rev: 'abc123',
     type,
     scope: null,
     description,
     breaking: false,
     body: null,
+    merge,
   });
 
   await t.step('keeps regular commits', () => {
@@ -149,7 +146,7 @@ Deno.test('filterReleasableCommits', async (t) => {
     assertEquals(result[0].description, 'add feature');
   });
 
-  await t.step('excludes merge commits', () => {
+  await t.step('excludes merge commits by message heuristic', () => {
     const commits = [
       makeCommit('chore', 'Merge pull request #123'),
       makeCommit('feat', 'add feature'),
@@ -157,16 +154,27 @@ Deno.test('filterReleasableCommits', async (t) => {
     const result = filterReleasableCommits(commits);
     assertEquals(result.length, 1);
   });
+
+  await t.step('excludes merge commits by merge field', () => {
+    const commits = [
+      makeCommit('feat', 'some merge commit', true),
+      makeCommit('feat', 'add feature'),
+    ];
+    const result = filterReleasableCommits(commits);
+    assertEquals(result.length, 1);
+    assertEquals(result[0].description, 'add feature');
+  });
 });
 
 Deno.test('groupByType', async (t) => {
   const makeCommit = (type: string): Commit => ({
-    sha: 'abc123',
+    rev: 'abc123',
     type,
     scope: null,
     description: 'message',
     breaking: false,
     body: null,
+    merge: false,
   });
 
   await t.step('groups commits by type', () => {

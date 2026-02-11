@@ -5,8 +5,8 @@
  */
 
 import { assertEquals, assertRejects } from '@std/assert';
-import { PlsError } from '../lib/error.ts';
-import { createTestRepo } from '../../tests/e2e/test_helpers.ts';
+import { PlsError } from '../../lib/error.ts';
+import { createTestRepo } from '../../../tests/e2e/test_helpers.ts';
 
 // --- File Operations ---
 
@@ -60,16 +60,16 @@ Deno.test('LocalGit commit operations', async (t) => {
   try {
     await t.step('commit stages and commits changes', async () => {
       await git.writeFile('file.txt', 'content');
-      const sha = await git.commit('feat: initial commit');
+      const rev = await git.commit('feat: initial commit');
 
-      // SHA should be 40 hex characters
-      assertEquals(sha.length, 40);
-      assertEquals(/^[0-9a-f]+$/.test(sha), true);
+      // Revision should be 40 hex characters
+      assertEquals(rev.length, 40);
+      assertEquals(/^[0-9a-f]+$/.test(rev), true);
     });
 
-    await t.step('getHeadSha returns current commit', async () => {
-      const sha = await git.getHeadSha();
-      assertEquals(sha.length, 40);
+    await t.step('getHeadRevision returns current commit', async () => {
+      const rev = await git.getHeadRevision();
+      assertEquals(rev.length, 40);
     });
 
     await t.step('getCommitMessage returns commit message', async () => {
@@ -77,8 +77,8 @@ Deno.test('LocalGit commit operations', async (t) => {
       assertEquals(message.trim(), 'feat: initial commit');
     });
 
-    await t.step('getCommitsSince returns commits after SHA', async () => {
-      const firstSha = await git.getHeadSha();
+    await t.step('getCommitsSince returns commits after revision', async () => {
+      const firstRev = await git.getHeadRevision();
 
       // Create more commits
       await git.writeFile('file2.txt', 'content2');
@@ -87,7 +87,7 @@ Deno.test('LocalGit commit operations', async (t) => {
       await git.writeFile('file3.txt', 'content3');
       await git.commit('feat: third commit');
 
-      const commits = await git.getCommitsSince(firstSha);
+      const commits = await git.getCommitsSince(firstRev);
 
       assertEquals(commits.length, 2);
       assertEquals(commits[0].type, 'feat');
@@ -114,7 +114,7 @@ Deno.test('LocalGit tag operations', async (t) => {
     // Create initial commit (required for tags)
     await git.writeFile('file.txt', 'content');
     await git.commit('feat: initial');
-    const commitSha = await git.getHeadSha();
+    const commitRev = await git.getHeadRevision();
 
     await t.step('createTag creates annotated tag', async () => {
       await git.createTag('v1.0.0', 'Release 1.0.0');
@@ -124,14 +124,14 @@ Deno.test('LocalGit tag operations', async (t) => {
       assertEquals(exists, true);
     });
 
-    await t.step('getTagSha returns commit SHA', async () => {
-      const sha = await git.getTagSha('v1.0.0');
-      assertEquals(sha, commitSha);
+    await t.step('getTagRevision returns commit revision', async () => {
+      const rev = await git.getTagRevision('v1.0.0');
+      assertEquals(rev, commitRev);
     });
 
-    await t.step('getTagSha returns null for missing tag', async () => {
-      const sha = await git.getTagSha('nonexistent');
-      assertEquals(sha, null);
+    await t.step('getTagRevision returns null for missing tag', async () => {
+      const rev = await git.getTagRevision('nonexistent');
+      assertEquals(rev, null);
     });
 
     await t.step('getTagMessage returns tag message', async () => {
@@ -148,23 +148,23 @@ Deno.test('LocalGit tag operations', async (t) => {
   }
 });
 
-// --- SHA Operations ---
+// --- Revision Operations ---
 
-Deno.test('LocalGit SHA operations', async (t) => {
+Deno.test('LocalGit revision operations', async (t) => {
   const { git, cleanup } = await createTestRepo();
 
   try {
     await git.writeFile('file.txt', 'content');
     await git.commit('feat: initial');
-    const sha = await git.getHeadSha();
+    const rev = await git.getHeadRevision();
 
-    await t.step('shaExists returns true for valid SHA', async () => {
-      const exists = await git.shaExists(sha);
+    await t.step('revExists returns true for valid revision', async () => {
+      const exists = await git.revExists(rev);
       assertEquals(exists, true);
     });
 
-    await t.step('shaExists returns false for invalid SHA', async () => {
-      const exists = await git.shaExists('0000000000000000000000000000000000000000');
+    await t.step('revExists returns false for invalid revision', async () => {
+      const exists = await git.revExists('0000000000000000000000000000000000000000');
       assertEquals(exists, false);
     });
   } finally {
@@ -181,20 +181,20 @@ Deno.test('LocalGit findCommitByContent', async (t) => {
     // Create file with version
     await git.writeFile('.pls/versions.json', '{"version": "1.0.0"}');
     await git.commit('chore: release v1.0.0');
-    const releaseSha = await git.getHeadSha();
+    const releaseRev = await git.getHeadRevision();
 
     // Create more commits
     await git.writeFile('other.txt', 'unrelated');
     await git.commit('feat: other change');
 
     await t.step('finds commit that introduced string', async () => {
-      const sha = await git.findCommitByContent('"version": "1.0.0"', '.pls/versions.json');
-      assertEquals(sha, releaseSha);
+      const rev = await git.findCommitByContent('"version": "1.0.0"', '.pls/versions.json');
+      assertEquals(rev, releaseRev);
     });
 
     await t.step('returns null for non-existent string', async () => {
-      const sha = await git.findCommitByContent('nonexistent', '.pls/versions.json');
-      assertEquals(sha, null);
+      const rev = await git.findCommitByContent('nonexistent', '.pls/versions.json');
+      assertEquals(rev, null);
     });
   } finally {
     await cleanup();

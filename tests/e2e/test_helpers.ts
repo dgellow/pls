@@ -4,7 +4,7 @@
  * Provides createTestRepo() and run() used across test files.
  */
 
-import { LocalGit } from '../../src/clients/local-git.ts';
+import { LocalGit } from '../../src/clients/git/local.ts';
 
 /**
  * Helper to create a test git repository with initial setup.

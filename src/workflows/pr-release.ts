@@ -7,8 +7,7 @@
  * For Strategy B (next branch): syncs base branch onto target after release.
  */
 
-import type { GitHub } from '../clients/github.ts';
-import type { LocalGit } from '../clients/local-git.ts';
+import type { BranchSyncable, CodeHost, LocalRepo } from '../domain/vcs.ts';
 import type { VersionsManifest } from '../domain/types.ts';
 import type { PlsConfig } from '../domain/config.ts';
 import { parseReleaseMetadata } from '../domain/release-metadata.ts';
@@ -50,13 +49,13 @@ const DEFAULT_RESULT: ReleaseResult = {
  * Self-healing: runs on every push, creates missing tags.
  */
 export async function releaseWorkflow(
-  git: LocalGit,
-  github: GitHub,
+  repo: LocalRepo,
+  host: CodeHost,
   options: ReleaseOptions = {},
 ): Promise<ReleaseResult> {
   // 1. Check if HEAD is a release commit
-  const headSha = await git.getHeadSha();
-  const headMessage = await git.getCommitMessage('HEAD');
+  const headRev = await repo.getHeadRevision();
+  const headMessage = await repo.getCommitMessage('HEAD');
   const metadata = parseReleaseMetadata(headMessage);
 
   let version: string;
@@ -70,7 +69,7 @@ export async function releaseWorkflow(
     bumpType = metadata.type;
   } else {
     // Not a release commit - read from versions.json
-    const versionsContent = await git.readFile('.pls/versions.json');
+    const versionsContent = await repo.readFile('.pls/versions.json');
     if (!versionsContent) {
       return { ...DEFAULT_RESULT };
     }
@@ -83,21 +82,21 @@ export async function releaseWorkflow(
     }
 
     // Try to determine from/type from tag history
-    fromVersion = await findPreviousVersion(github, version);
+    fromVersion = await findPreviousVersion(host, version);
     bumpType = 'patch'; // Default, actual type unknown
   }
 
   const tag = `v${version}`;
 
   // 2. Check if tag already exists
-  const existingTag = await github.getTag(tag);
+  const existingTag = await host.getTag(tag);
   if (existingTag?.isPlsRelease) {
     // Already released - but still try branch sync
     let branchSynced = false;
     let branchSyncError: string | null = null;
 
-    if (options.config?.strategy === 'next') {
-      const syncResult = await syncBaseBranch(git, options.config);
+    if (options.config?.strategy === 'next' && isBranchSyncable(repo)) {
+      const syncResult = await syncBaseBranch(repo, options.config);
       branchSynced = syncResult.success;
       branchSyncError = syncResult.error;
     }
@@ -114,23 +113,23 @@ export async function releaseWorkflow(
     };
   }
 
-  // 3. Find the release commit SHA
-  let releaseSha: string;
+  // 3. Find the release commit revision
+  let releaseRev: string;
 
   if (metadata) {
     // HEAD is the release commit
-    releaseSha = headSha;
+    releaseRev = headRev;
   } else {
     // Search for commit that set this version
-    const foundSha = await git.findCommitByContent(version, '.pls/versions.json');
-    releaseSha = foundSha || headSha;
+    const foundRev = await repo.findCommitByContent(version, '.pls/versions.json');
+    releaseRev = foundRev || headRev;
   }
 
   // 4. Generate tag message - get commits since previous release
   const fromTag = `v${fromVersion}`;
-  const fromTagInfo = await github.getTag(fromTag);
-  const fromSha = fromTagInfo?.sha || null;
-  const commits = await git.getCommitsSince(fromSha);
+  const fromTagInfo = await host.getTag(fromTag);
+  const fromRev = fromTagInfo?.rev || null;
+  const commits = await repo.getCommitsSince(fromRev);
   const relevantCommits = filterReleasableCommits(commits);
   const commitList = generateCommitList(relevantCommits);
 
@@ -143,7 +142,7 @@ export async function releaseWorkflow(
   const recovered = existingTag !== null && !existingTag.isPlsRelease;
 
   try {
-    await github.createTag(tag, releaseSha, tagMessage);
+    await host.createTag(tag, releaseRev, tagMessage);
   } catch (error) {
     // Tag might already exist (concurrent runs)
     if (String(error).includes('already exists')) {
@@ -162,7 +161,7 @@ export async function releaseWorkflow(
   let releaseUrl: string | null = null;
 
   try {
-    releaseUrl = await github.createRelease(
+    releaseUrl = await host.createRelease(
       tag,
       `Release ${tag}`,
       `## Changes\n${commitList}`,
@@ -177,8 +176,8 @@ export async function releaseWorkflow(
   let branchSynced = false;
   let branchSyncError: string | null = null;
 
-  if (options.config?.strategy === 'next') {
-    const syncResult = await syncBaseBranch(git, options.config);
+  if (options.config?.strategy === 'next' && isBranchSyncable(repo)) {
+    const syncResult = await syncBaseBranch(repo, options.config);
     branchSynced = syncResult.success;
     branchSyncError = syncResult.error;
   }
@@ -206,7 +205,7 @@ export async function releaseWorkflow(
  * Retries with exponential backoff to handle concurrent pushes.
  */
 async function syncBaseBranch(
-  git: LocalGit,
+  repo: BranchSyncable,
   config: PlsConfig,
   maxRetries = 3,
 ): Promise<{ success: boolean; error: string | null }> {
@@ -220,13 +219,13 @@ async function syncBaseBranch(
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       // Fetch latest
-      await git.fetch('origin');
+      await repo.fetch('origin');
 
       // Checkout base branch from remote
-      await git.checkoutBranch(baseBranch, `origin/${baseBranch}`);
+      await repo.checkoutBranch(baseBranch, `origin/${baseBranch}`);
 
       // Rebase onto target
-      const rebaseSuccess = await git.rebase(`origin/${targetBranch}`);
+      const rebaseSuccess = await repo.rebase(`origin/${targetBranch}`);
       if (!rebaseSuccess) {
         return {
           success: false,
@@ -235,7 +234,7 @@ async function syncBaseBranch(
       }
 
       // Push with force-with-lease (safe force push)
-      const pushSuccess = await git.pushForceWithLease('origin', baseBranch);
+      const pushSuccess = await repo.pushForceWithLease('origin', baseBranch);
       if (pushSuccess) {
         return { success: true, error: null };
       }
@@ -267,7 +266,7 @@ async function syncBaseBranch(
  * Find previous version for changelog context.
  */
 async function findPreviousVersion(
-  github: GitHub,
+  host: CodeHost,
   currentVersion: string,
 ): Promise<string> {
   // Try to find previous tag
@@ -277,18 +276,26 @@ async function findPreviousVersion(
   // Check for previous patch
   if (parsed.patch > 0) {
     const prevTag = `v${parsed.major}.${parsed.minor}.${parsed.patch - 1}`;
-    const exists = await github.getTag(prevTag);
+    const exists = await host.getTag(prevTag);
     if (exists) return `${parsed.major}.${parsed.minor}.${parsed.patch - 1}`;
   }
 
   // Check for previous minor
   if (parsed.minor > 0) {
     const prevTag = `v${parsed.major}.${parsed.minor - 1}.0`;
-    const exists = await github.getTag(prevTag);
+    const exists = await host.getTag(prevTag);
     if (exists) return `${parsed.major}.${parsed.minor - 1}.0`;
   }
 
   return '0.0.0';
+}
+
+/**
+ * Check if a LocalRepo also supports branch sync operations.
+ */
+function isBranchSyncable(repo: LocalRepo): repo is LocalRepo & BranchSyncable {
+  return 'fetch' in repo && 'checkoutBranch' in repo && 'rebase' in repo &&
+    'pushForceWithLease' in repo;
 }
 
 /**

@@ -4,9 +4,15 @@
  * Key design: branch is a PARAMETER, not configuration.
  */
 
-import type { FileChanges, PullRequest, ReleaseTag } from '../domain/types.ts';
+import type {
+  CreatePROptions,
+  FileChanges,
+  PullRequest,
+  ReleaseTag,
+  UpdatePROptions,
+} from '../domain/types.ts';
 import { hasReleaseMetadata, parseReleaseMetadata } from '../domain/release-metadata.ts';
-import type { CreatePROptions, GitHubClient, UpdatePROptions } from './types.ts';
+import type { CodeHost } from '../domain/vcs.ts';
 import { PlsError } from '../lib/error.ts';
 
 export interface GitHubClientOptions {
@@ -15,7 +21,7 @@ export interface GitHubClientOptions {
   token: string;
 }
 
-export class GitHub implements GitHubClient {
+export class GitHub implements CodeHost {
   private owner: string;
   private repo: string;
   private token: string;
@@ -111,11 +117,11 @@ export class GitHub implements GitHubClient {
   async commit(
     files: FileChanges,
     message: string,
-    parentSha: string,
+    parentRev: string,
   ): Promise<string> {
     // 1. Get parent tree
     const parentCommit = await this.request<{ tree: { sha: string } }>(
-      `/repos/${this.owner}/${this.repo}/git/commits/${parentSha}`,
+      `/repos/${this.owner}/${this.repo}/git/commits/${parentRev}`,
     );
 
     // 2. Create blobs for each file
@@ -159,73 +165,73 @@ export class GitHub implements GitHubClient {
     );
 
     // 4. Create commit
-    const commit = await this.request<{ sha: string }>(
+    const commitResult = await this.request<{ sha: string }>(
       `/repos/${this.owner}/${this.repo}/git/commits`,
       {
         method: 'POST',
         body: JSON.stringify({
           message,
           tree: tree.sha,
-          parents: [parentSha],
+          parents: [parentRev],
         }),
       },
     );
 
-    return commit.sha;
+    return commitResult.sha;
   }
 
   // --- Branch Operations ---
 
-  async getBranchSha(branch: string): Promise<string | null> {
+  async getBranchRevision(branch: string): Promise<string | null> {
     const ref = await this.requestSafe<{ object: { sha: string } }>(
       `/repos/${this.owner}/${this.repo}/git/ref/heads/${branch}`,
     );
     return ref?.object.sha ?? null;
   }
 
-  async pointBranch(branch: string, sha: string, force = false): Promise<void> {
+  async pointBranch(branch: string, rev: string, force = false): Promise<void> {
     await this.request(
       `/repos/${this.owner}/${this.repo}/git/refs/heads/${branch}`,
       {
         method: 'PATCH',
-        body: JSON.stringify({ sha, force }),
+        body: JSON.stringify({ sha: rev, force }),
       },
     );
   }
 
-  async createBranch(branch: string, sha: string): Promise<void> {
+  async createBranch(branch: string, rev: string): Promise<void> {
     await this.request(
       `/repos/${this.owner}/${this.repo}/git/refs`,
       {
         method: 'POST',
         body: JSON.stringify({
           ref: `refs/heads/${branch}`,
-          sha,
+          sha: rev,
         }),
       },
     );
   }
 
   async branchExists(branch: string): Promise<boolean> {
-    const sha = await this.getBranchSha(branch);
-    return sha !== null;
+    const rev = await this.getBranchRevision(branch);
+    return rev !== null;
   }
 
   /**
    * Ensure branch exists, creating or updating as needed.
    */
-  async ensureBranch(branch: string, sha: string): Promise<void> {
+  async ensureBranch(branch: string, rev: string): Promise<void> {
     const exists = await this.branchExists(branch);
     if (exists) {
-      await this.pointBranch(branch, sha, true);
+      await this.pointBranch(branch, rev, true);
     } else {
-      await this.createBranch(branch, sha);
+      await this.createBranch(branch, rev);
     }
   }
 
   // --- Tag Operations ---
 
-  async createTag(name: string, sha: string, message: string): Promise<void> {
+  async createTag(name: string, rev: string, message: string): Promise<void> {
     // Create annotated tag object
     const tagObject = await this.request<{ sha: string }>(
       `/repos/${this.owner}/${this.repo}/git/tags`,
@@ -234,7 +240,7 @@ export class GitHub implements GitHubClient {
         body: JSON.stringify({
           tag: name,
           message,
-          object: sha,
+          object: rev,
           type: 'commit',
         }),
       },
@@ -261,7 +267,7 @@ export class GitHub implements GitHubClient {
 
     if (!ref) return null;
 
-    let commitSha = ref.object.sha;
+    let commitRev = ref.object.sha;
     let message: string | null = null;
 
     // If it's an annotated tag, get the tag object
@@ -272,7 +278,7 @@ export class GitHub implements GitHubClient {
 
       if (tagObject) {
         message = tagObject.message;
-        commitSha = tagObject.object.sha;
+        commitRev = tagObject.object.sha;
       }
     }
 
@@ -281,7 +287,7 @@ export class GitHub implements GitHubClient {
 
     return {
       name,
-      sha: commitSha,
+      rev: commitRev,
       message,
       isPlsRelease,
       metadata,

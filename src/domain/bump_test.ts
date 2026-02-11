@@ -10,12 +10,13 @@ const makeCommit = (
   type: string,
   breaking = false,
 ): Commit => ({
-  sha: 'abc123',
+  rev: 'abc123',
   type,
   scope: null,
   description: 'message',
   breaking,
   body: null,
+  merge: false,
 });
 
 Deno.test('determineBumpType', async (t) => {

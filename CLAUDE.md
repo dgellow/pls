@@ -82,9 +82,10 @@ src/
 │   ├── pr-release.ts   # Post-merge release creation
 │   └── local-release.ts # Local release workflow
 ├── domain/
+│   ├── vcs.ts          # VCS abstractions (LocalRepo, CodeHost, BranchSyncable)
 │   ├── manifest.ts     # Ecosystem manifest detection, reading, version update
 │   ├── bump.ts         # Version bump calculation
-│   ├── commits.ts      # Commit parsing
+│   ├── commits.ts      # Commit parsing (VCS-agnostic)
 │   ├── changelog.ts    # Changelog generation
 │   ├── files.ts        # Release file orchestration (@pls-version, changelog, versions.json)
 │   ├── pr-body.ts      # PR body generation/parsing
@@ -92,9 +93,10 @@ src/
 │   ├── release-metadata.ts # Structured metadata format
 │   └── types.ts        # Shared types
 ├── clients/
-│   ├── github.ts       # GitHub API client
-│   ├── local-git.ts    # Local git operations
-│   └── types.ts        # Client interfaces
+│   ├── git/
+│   │   ├── local.ts    # LocalGit (implements LocalRepo, BranchSyncable, RemoteDetectable)
+│   │   └── parse.ts    # Git log parsing (git-specific format handling)
+│   └── github.ts       # GitHub API client (implements CodeHost)
 ├── lib/
 │   ├── error.ts        # PlsError class
 │   └── semver.ts       # Semantic version utilities
@@ -107,8 +109,12 @@ Modules have strict one-way dependencies. Never introduce circular imports.
 
 ```
 cli/ → workflows/ → domain/ → lib/
-                  → clients/
+ ↓                     ↑
+clients/ ──────────────┘
 ```
+
+CLI is the composition root: constructs concrete clients (`LocalGit`, `GitHub`), passes them to
+workflows as domain interfaces (`LocalRepo`, `CodeHost`). Workflows never import from `clients/`.
 
 Within `domain/`, the key split is:
 
@@ -124,21 +130,32 @@ support means touching `manifest.ts` only.
 
 ### Key Interfaces
 
+Defined in `domain/vcs.ts`. Workflows depend on these interfaces, never on concrete clients.
+
 ```typescript
-// Git operations (local git CLI)
-interface GitClient {
+// Local VCS operations (git, hg, jj, etc.)
+interface LocalRepo {
   readFile(path: string): Promise<string | null>;
-  getCommitsSince(sha: string | null): Promise<Commit[]>;
-  commit(message: string): Promise<string>;
+  getCommitsSince(rev: RevisionId | null): Promise<Commit[]>;
+  commit(message: string): Promise<RevisionId>;
   createTag(name: string, message: string): Promise<void>;
+  // ... see domain/vcs.ts for full interface
 }
 
-// GitHub API operations
-interface GitHubClient {
+// Code hosting platform (GitHub, GitLab, etc.)
+interface CodeHost {
   readFile(path: string, ref?: string): Promise<string | null>;
-  commit(files: FileChanges, message: string, parentSha: string): Promise<string>;
-  ensureBranch(branch: string, sha: string): Promise<void>;
+  commit(files: FileChanges, message: string, parentRev: RevisionId): Promise<RevisionId>;
+  ensureBranch(branch: string, rev: RevisionId): Promise<void>;
   createPR(options: CreatePROptions): Promise<PullRequest>;
+  // ... see domain/vcs.ts for full interface
+}
+
+// Branch sync (Strategy B only, e.g. next → main rebase)
+interface BranchSyncable {
+  fetch(remote?: string): Promise<void>;
+  rebase(onto: string): Promise<boolean>;
+  pushForceWithLease(remote: string, branch: string): Promise<boolean>;
 }
 
 // Structured error with code for programmatic handling
@@ -196,8 +213,7 @@ type: minor
 ```json
 {
   ".": {
-    "version": "1.2.3",
-    "sha": "abc123..."
+    "version": "1.2.3"
   }
 }
 ```
