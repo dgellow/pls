@@ -57,6 +57,18 @@ export function generateOptions(
         });
       }
     }
+
+    // For pre-1.0: offer 1.0.0 as deliberate stable transition
+    const parsedFrom = semver.parse(bump.from);
+    if (parsedFrom && parsedFrom.major === 0) {
+      options.push({
+        version: '1.0.0',
+        type: 'major',
+        label: 'stable',
+        selected: false,
+        disabled: false,
+      });
+    }
   } else {
     // In prerelease - offer progression through stages
     const stageOrder = ['alpha', 'beta', 'rc', 'stable'] as const;
@@ -221,6 +233,33 @@ export function parseOptionsBlock(body: string): VersionSelection | null {
 export function getSelectedVersion(body: string): string | null {
   const parsed = parseOptionsBlock(body);
   return parsed?.selected?.version ?? null;
+}
+
+/**
+ * Get user override from PR body — returns version only if user explicitly
+ * checked a checkbox. Returns null if no checkbox was checked (meaning the
+ * "current" version was auto-calculated and should be recalculated).
+ */
+export function getUserOverride(body: string): string | null {
+  const startIndex = body.indexOf(OPTIONS_START);
+  const endIndex = body.indexOf(OPTIONS_END);
+  if (startIndex === -1 || endIndex === -1 || endIndex <= startIndex) return null;
+
+  const section = body.substring(startIndex + OPTIONS_START.length, endIndex);
+  const lines = section.split('\n');
+
+  for (const line of lines) {
+    if (!line.trim().startsWith('- [')) continue;
+    const isChecked = line.includes('[x]') || line.includes('[X]');
+    if (!isChecked) continue;
+
+    const match = line.match(OPTION_MARKER_REGEX);
+    if (match && !match[3]) { // match[3] is disabledReason — skip disabled options
+      return match[1]; // version
+    }
+  }
+
+  return null;
 }
 
 /**

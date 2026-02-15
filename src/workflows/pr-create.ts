@@ -11,7 +11,7 @@ import { filterReleasableCommits } from '../domain/commits.ts';
 import { generateChangelog, generateReleaseNotes } from '../domain/changelog.ts';
 import { buildReleaseFiles, createInitialVersionsManifest } from '../domain/files.ts';
 import { detectManifest, readUpdatableManifests } from '../domain/manifest.ts';
-import { generateBootstrapPRBody, generatePRBody, getSelectedVersion } from '../domain/pr-body.ts';
+import { generateBootstrapPRBody, generatePRBody, getUserOverride } from '../domain/pr-body.ts';
 import { PlsError } from '../lib/error.ts';
 
 export interface PrepResult {
@@ -75,9 +75,9 @@ export async function prepWorkflow(
   let selectedVersion = bump.to;
 
   if (existingPR) {
-    const userSelection = getSelectedVersion(existingPR.body);
-    if (userSelection && userSelection !== bump.to) {
-      selectedVersion = userSelection;
+    const userOverride = getUserOverride(existingPR.body);
+    if (userOverride) {
+      selectedVersion = userOverride;
     }
   }
 

@@ -17,11 +17,19 @@ import * as semver from '../lib/semver.ts';
  */
 export function determineBumpType(
   commits: Commit[],
+  currentVersion?: string,
 ): 'major' | 'minor' | 'patch' | null {
   if (commits.length === 0) return null;
 
   const hasBreaking = commits.some((c) => c.breaking);
-  if (hasBreaking) return 'major';
+  if (hasBreaking) {
+    // Pre-1.0: breaking changes bump minor, not major (semver spec)
+    if (currentVersion) {
+      const parsed = semver.parse(currentVersion);
+      if (parsed && parsed.major === 0) return 'minor';
+    }
+    return 'major';
+  }
 
   const hasFeature = commits.some((c) => c.type === 'feat');
   if (hasFeature) return 'minor';
@@ -41,7 +49,7 @@ export function calculateBump(
   currentVersion: string,
   commits: Commit[],
 ): VersionBump | null {
-  const bumpType = determineBumpType(commits);
+  const bumpType = determineBumpType(commits, currentVersion);
   if (!bumpType) return null;
 
   const stage = semver.getStage(currentVersion);
