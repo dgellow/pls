@@ -122,11 +122,19 @@ export function generateChangelog(bump: VersionBump): string {
 }
 
 /**
- * Generate release notes (changelog with header).
+ * Generate release notes for CHANGELOG.md (concise, no commit bodies).
+ *
+ * Strips commit bodies to keep CHANGELOG.md concise and avoid HTML
+ * formatting (<details>, <br>) that conflicts with deno fmt.
+ * Full details with bodies are shown in PR body via generateChangelog.
  */
 export function generateReleaseNotes(bump: VersionBump): string {
   const header = `## ${bump.to}`;
-  const body = generateChangelog(bump);
+  const strippedBump = {
+    ...bump,
+    commits: bump.commits.map((c) => ({ ...c, body: null })),
+  };
+  const body = generateChangelog(strippedBump);
   return body ? `${header}\n\n${body}` : header;
 }
 
