@@ -431,4 +431,11 @@ export class GitHub implements CodeHost {
     );
     return release !== null;
   }
+
+  async getReleaseUrl(tag: string): Promise<string | null> {
+    const release = await this.requestSafe<{ html_url: string }>(
+      `/repos/${this.owner}/${this.repo}/releases/tags/${tag}`,
+    );
+    return release?.html_url ?? null;
+  }
 }

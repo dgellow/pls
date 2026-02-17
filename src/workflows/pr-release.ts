@@ -91,7 +91,25 @@ export async function releaseWorkflow(
   // 2. Check if tag already exists
   const existingTag = await host.getTag(tag);
   if (existingTag?.isPlsRelease) {
-    // Already released - but still try branch sync
+    // Tag exists — but GitHub Release might be missing. Try to create/find it.
+    const isPrerelease = semver.getStage(version) !== 'stable';
+
+    const fromTag = `v${fromVersion}`;
+    const fromTagInfo = await host.getTag(fromTag);
+    const fromRev = fromTagInfo?.rev || null;
+    const commits = await repo.getCommitsSince(fromRev);
+    const relevantCommits = filterReleasableCommits(commits);
+    const commitList = generateCommitList(relevantCommits);
+
+    const releaseUrl = await ensureRelease(
+      host,
+      tag,
+      `Release ${tag}`,
+      `## Changes\n${commitList}`,
+      isPrerelease,
+    );
+
+    // Branch sync (Strategy B)
     let branchSynced = false;
     let branchSyncError: string | null = null;
 
@@ -105,7 +123,7 @@ export async function releaseWorkflow(
       released: false,
       version,
       tag,
-      url: null,
+      url: releaseUrl,
       alreadyExists: true,
       recovered: false,
       branchSynced,
@@ -146,10 +164,20 @@ export async function releaseWorkflow(
   } catch (error) {
     // Tag might already exist (concurrent runs)
     if (String(error).includes('already exists')) {
+      const isPrerelease = semver.getStage(version) !== 'stable';
+      const releaseUrl = await ensureRelease(
+        host,
+        tag,
+        `Release ${tag}`,
+        `## Changes\n${commitList}`,
+        isPrerelease,
+      );
+
       return {
         ...DEFAULT_RESULT,
         version,
         tag,
+        url: releaseUrl,
         alreadyExists: true,
       };
     }
@@ -158,19 +186,13 @@ export async function releaseWorkflow(
 
   // 6. Create GitHub Release
   const isPrerelease = semver.getStage(version) !== 'stable';
-  let releaseUrl: string | null = null;
-
-  try {
-    releaseUrl = await host.createRelease(
-      tag,
-      `Release ${tag}`,
-      `## Changes\n${commitList}`,
-      isPrerelease,
-    );
-  } catch (error) {
-    // Release might already exist
-    console.warn(`Warning: Could not create GitHub Release: ${error}`);
-  }
+  const releaseUrl = await ensureRelease(
+    host,
+    tag,
+    `Release ${tag}`,
+    `## Changes\n${commitList}`,
+    isPrerelease,
+  );
 
   // 7. Sync branches for Strategy B (next → main)
   let branchSynced = false;
@@ -192,6 +214,29 @@ export async function releaseWorkflow(
     branchSynced,
     branchSyncError,
   };
+}
+
+/**
+ * Attempt to create a GitHub Release, falling back to fetching an existing one.
+ * Returns the release URL or null (best effort).
+ */
+async function ensureRelease(
+  host: CodeHost,
+  tag: string,
+  name: string,
+  body: string,
+  prerelease: boolean,
+): Promise<string | null> {
+  try {
+    return await host.createRelease(tag, name, body, prerelease);
+  } catch {
+    // Release might already exist — try to fetch it
+    try {
+      return await host.getReleaseUrl(tag);
+    } catch {
+      return null;
+    }
+  }
 }
 
 /**

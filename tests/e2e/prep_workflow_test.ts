@@ -86,6 +86,7 @@ function createStatefulHost(
     },
     createRelease: () => Promise.resolve(''),
     releaseExists: () => Promise.resolve(false),
+    getReleaseUrl: () => Promise.resolve(null),
   };
 
   return {

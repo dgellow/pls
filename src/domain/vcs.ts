@@ -70,4 +70,5 @@ export interface CodeHost {
   updatePR(number: number, options: UpdatePROptions): Promise<void>;
   createRelease(tag: string, name: string, body: string, prerelease?: boolean): Promise<string>;
   releaseExists(tag: string): Promise<boolean>;
+  getReleaseUrl(tag: string): Promise<string | null>;
 }

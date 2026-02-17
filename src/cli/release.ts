@@ -101,9 +101,14 @@ export async function release(args: string[]): Promise<void> {
   output.info('Version', result.version);
 
   if (result.alreadyExists) {
-    output.info('Tag', `${result.tag} ✓ (exists)`);
-    console.log();
-    console.log('Already released. Nothing to do.');
+    output.info('Tag', `${result.tag} (exists)`);
+
+    if (result.url) {
+      output.success(`Release: ${result.url}`);
+    } else {
+      console.log();
+      console.log('Already released. Nothing to do.');
+    }
 
     // Still show branch sync result
     if (config.strategy === 'next') {
