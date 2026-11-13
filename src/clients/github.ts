@@ -21,7 +21,13 @@ export interface GitHubClientOptions {
   token: string;
   /** REST API base URL. Defaults to github.com's API; set for GitHub Enterprise Server. */
   apiUrl?: string;
+  /** How long to wait for one request, in milliseconds. Defaults to 15 s. */
+  requestTimeoutMs?: number;
 }
+
+// GitHub ends a request itself after 10 s of processing. A request that takes
+// longer than this is not being answered at all.
+const DEFAULT_REQUEST_TIMEOUT_MS = 15_000;
 
 /**
  * Decode base64 file content as UTF-8 text.
@@ -50,12 +56,14 @@ export class GitHub implements CodeHost {
   private repo: string;
   private token: string;
   private baseUrl: string;
+  private requestTimeoutMs: number;
 
   constructor(options: GitHubClientOptions) {
     this.owner = options.owner;
     this.repo = options.repo;
     this.token = options.token;
     this.baseUrl = (options.apiUrl || 'https://api.github.com').replace(/\/+$/, '');
+    this.requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
 
     if (!this.token) {
       throw new PlsError(
@@ -73,32 +81,58 @@ export class GitHub implements CodeHost {
     options: RequestInit = {},
   ): Promise<T> {
     const url = path.startsWith('http') ? path : `${this.baseUrl}${path}`;
+    const method = options.method ?? 'GET';
 
-    const response = await fetch(url, {
-      ...options,
-      headers: {
-        'Authorization': `Bearer ${this.token}`,
-        'Accept': 'application/vnd.github+json',
-        'X-GitHub-Api-Version': '2022-11-28',
-        'Content-Type': 'application/json',
-        ...options.headers,
-      },
-    });
-
-    if (!response.ok) {
-      const body = await response.text();
+    // The time limit covers the whole exchange, body included: without one, a
+    // request that is accepted and never answered holds the job until the CI
+    // system kills it hours later.
+    let response: Response;
+    let text: string;
+    try {
+      response = await fetch(url, {
+        ...options,
+        signal: AbortSignal.timeout(this.requestTimeoutMs),
+        headers: {
+          'Authorization': `Bearer ${this.token}`,
+          'Accept': 'application/vnd.github+json',
+          'X-GitHub-Api-Version': '2022-11-28',
+          'Content-Type': 'application/json',
+          ...options.headers,
+        },
+      });
+      text = await response.text();
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'TimeoutError') {
+        throw new PlsError(
+          `GitHub did not answer within ${this.requestTimeoutMs / 1000} s: ${method} ${path}\n` +
+            `Nothing is known about whether the request was applied. ` +
+            `Check https://www.githubstatus.com and your network, then run the command again.`,
+          'GITHUB_TIMEOUT',
+          { method, path, timeoutMs: this.requestTimeoutMs },
+        );
+      }
+      const reason = error instanceof Error ? error.message : String(error);
       throw new PlsError(
-        `GitHub API error: ${response.status} ${response.statusText}\n${body}`,
-        'GITHUB_API_ERROR',
-        { status: response.status, body },
+        `GitHub API unreachable: ${method} ${path}\n${reason}\n` +
+          `Check your connection, then run the command again.`,
+        'GITHUB_NETWORK_ERROR',
+        { method, path, reason },
       );
     }
 
-    if (response.status === 204) {
+    if (!response.ok) {
+      throw new PlsError(
+        `GitHub API error: ${response.status} ${response.statusText}\n${text}`,
+        'GITHUB_API_ERROR',
+        { status: response.status, body: text },
+      );
+    }
+
+    if (response.status === 204 || text === '') {
       return {} as T;
     }
 
-    return response.json();
+    return JSON.parse(text);
   }
 
   /**

@@ -230,3 +230,55 @@ Deno.test('GitHub.commit keeps the mode of files that exist', async (t) => {
     });
   });
 });
+
+Deno.test('GitHub requests have a time limit', async (t) => {
+  await t.step('a request that is never answered fails, naming the request', async () => {
+    let release = () => {};
+    const never = new Promise<void>((resolve) => (release = resolve));
+    const server = Deno.serve(
+      { port: 0, hostname: '127.0.0.1', onListen: () => {} },
+      async () => {
+        await never;
+        return new Response('late');
+      },
+    );
+    const { port } = server.addr as Deno.NetAddr;
+    const github = new GitHub({
+      owner: 'acme',
+      repo: 'widget',
+      token: 't',
+      apiUrl: `http://127.0.0.1:${port}`,
+      requestTimeoutMs: 300,
+    });
+
+    try {
+      const started = performance.now();
+      const error = await assertRejects(() => github.getBranchRevision('main'), PlsError);
+
+      assertEquals(error.code, 'GITHUB_TIMEOUT');
+      assertEquals(error.message.includes('GET /repos/acme/widget/git/ref/heads/main'), true);
+      assertEquals(performance.now() - started < 5000, true);
+    } finally {
+      release();
+      await server.shutdown();
+    }
+  });
+
+  await t.step('an unreachable host is a network error, not a crash', async () => {
+    // A port nothing listens on.
+    const listener = Deno.listen({ port: 0, hostname: '127.0.0.1' });
+    const { port } = listener.addr as Deno.NetAddr;
+    listener.close();
+    const github = new GitHub({
+      owner: 'acme',
+      repo: 'widget',
+      token: 't',
+      apiUrl: `http://127.0.0.1:${port}`,
+    });
+
+    const error = await assertRejects(() => github.getBranchRevision('main'), PlsError);
+
+    assertEquals(error.code, 'GITHUB_NETWORK_ERROR');
+    assertEquals(error.message.includes('Check your connection'), true);
+  });
+});
