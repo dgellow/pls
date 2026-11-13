@@ -40,10 +40,49 @@ export async function prepWorkflow(
   host: CodeHost,
   options: PrepOptions,
 ): Promise<PrepResult> {
+  // The release is prepared for one commit of the base branch. If the branch
+  // moves while this runs (another push landed), the result would describe an
+  // older state and overwrite the newer run's release PR. So the branch is
+  // checked again just before writing, and the release prepared again for the
+  // new tip if it moved.
+  for (let attempt = 1;; attempt++) {
+    const result = await prepareOnce(repo, host, options);
+    if (result !== 'base-moved') return result;
+
+    if (attempt === MAX_ATTEMPTS) {
+      throw new PlsError(
+        `${options.baseBranch} moved ${MAX_ATTEMPTS} times while the release PR was being ` +
+          `prepared, so it was not updated.\n` +
+          `Run "pls prep" again once the pushes have settled; ` +
+          `the run for the latest push also updates it.`,
+        'BASE_BRANCH_MOVING',
+        { baseBranch: options.baseBranch, attempts: MAX_ATTEMPTS },
+      );
+    }
+  }
+}
+
+const MAX_ATTEMPTS = 3;
+
+/**
+ * Prepare the release for the current tip of the base branch.
+ * Returns 'base-moved' without writing if the tip changed in the meantime.
+ */
+async function prepareOnce(
+  repo: LocalRepo,
+  host: CodeHost,
+  options: PrepOptions,
+): Promise<PrepResult | 'base-moved'> {
   const { baseBranch, releaseBranch, dryRun } = options;
 
+  // The commit everything below is read from and built on.
+  const baseRev = await host.getBranchRevision(baseBranch);
+  if (!baseRev) {
+    throw new PlsError(`Base branch ${baseBranch} not found`, 'BRANCH_NOT_FOUND');
+  }
+
   // 1. Read current state - bootstrap if no versions.json
-  const versionsContent = await host.readFile('.pls/versions.json', baseBranch);
+  const versionsContent = await host.readFile('.pls/versions.json', baseRev);
   if (!versionsContent) {
     return await bootstrapWorkflow(host, options);
   }
@@ -61,7 +100,11 @@ export async function prepWorkflow(
   const releaseRev = await findReleaseRevision(repo, host, currentVersion);
 
   // 3. Get commits since release
-  const allCommits = await repo.getCommitsSince(releaseRev);
+  const headRev = await repo.getHeadRevision();
+  const allCommits = await repo.getCommitsSince(
+    releaseRev,
+    baseRev === headRev ? undefined : baseRev,
+  );
   const commits = filterReleasableCommits(allCommits);
 
   if (commits.length === 0) {
@@ -105,14 +148,14 @@ export async function prepWorkflow(
   const changelogEntry = generateReleaseNotes(effectiveBump); // For CHANGELOG.md (with version header)
   const changelog = generateChangelog(effectiveBump); // For PR body (body only)
 
-  const manifests = await readUpdatableManifests((p) => host.readFile(p, baseBranch));
-  const existingChangelog = await host.readFile('CHANGELOG.md', baseBranch);
+  const manifests = await readUpdatableManifests((p) => host.readFile(p, baseRev));
+  const existingChangelog = await host.readFile('CHANGELOG.md', baseRev);
 
   // Get version file if configured
   const versionFilePath = versions['.']?.versionFile;
   const versionFile = requireVersionFile(
     versionFilePath,
-    versionFilePath ? await host.readFile(versionFilePath, baseBranch) : null,
+    versionFilePath ? await host.readFile(versionFilePath, baseRev) : null,
   );
 
   const { files, commitMessage } = buildReleaseFiles({
@@ -144,13 +187,21 @@ export async function prepWorkflow(
     };
   }
 
-  // 8. Create commit and update branch
-  const baseRev = await host.getBranchRevision(baseBranch);
-  if (!baseRev) {
-    throw new PlsError(`Base branch ${baseBranch} not found`, 'BRANCH_NOT_FOUND');
+  // 8. Create the commit. Nothing refers to it yet, so this changes nothing
+  // anyone can see.
+  const commitRev = await host.commit(files, commitMessage, baseRev);
+
+  // The base branch must still be where this run read it. Checked as late as
+  // possible: what follows is two requests.
+  const tip = await host.getBranchRevision(baseBranch);
+  if (tip !== baseRev) {
+    console.warn(
+      `⚠️  ${baseBranch} moved from ${baseRev.slice(0, 7)} to ${tip?.slice(0, 7) ?? 'nothing'} ` +
+        `while the release was being prepared. Preparing it again for the new commit.`,
+    );
+    return 'base-moved';
   }
 
-  const commitRev = await host.commit(files, commitMessage, baseRev);
   await host.ensureBranch(releaseBranch, commitRev);
 
   // 9. Create or update PR
