@@ -445,6 +445,46 @@ Deno.test('releaseWorkflow', async (t) => {
     },
   );
 
+  await t.step('release notes stop at the release commit when run on a later commit', async () => {
+    const scopes: Array<string | undefined> = [];
+    const repo = createMockRepo({
+      // HEAD is two commits after the release of 1.1.0, whose tag is missing.
+      readFile: (path) =>
+        Promise.resolve(
+          path === '.pls/versions.json' ? JSON.stringify({ '.': { version: '1.1.0' } }) : null,
+        ),
+      findCommitByContent: () => Promise.resolve('release-1.1.0-rev'),
+      getCommitMessage: () =>
+        Promise.resolve(
+          'chore: release v1.1.0\n\n---pls-release---\nversion: 1.1.0\nfrom: 1.0.0\n' +
+            'type: minor\n---pls-release---',
+        ),
+      getCommitsSince: (_rev, until) => {
+        scopes.push(until);
+        return Promise.resolve([makeCommit('feat', 'add export command')]);
+      },
+    });
+
+    await releaseWorkflow(repo, createMockHost());
+
+    assertEquals(scopes, ['release-1.1.0-rev']);
+  });
+
+  await t.step('release notes use the checkout when it is the release commit', async () => {
+    const scopes: Array<string | undefined> = [];
+    const repo = createMockRepo({
+      ...atReleaseCommit('1.1.0', '1.0.0'),
+      getCommitsSince: (_rev, until) => {
+        scopes.push(until);
+        return Promise.resolve([]);
+      },
+    });
+
+    await releaseWorkflow(repo, createMockHost());
+
+    assertEquals(scopes, [undefined]);
+  });
+
   await t.step('refuses a tag that already points at another commit', async () => {
     const created: string[] = [];
     const repo = createMockRepo({

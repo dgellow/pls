@@ -81,6 +81,11 @@ export async function releaseWorkflow(
   const claimed = parseReleaseMetadata(await repo.getCommitMessage(releaseRev));
   const metadata = claimed?.version === version ? claimed : null;
 
+  // Release notes list the commits up to the release commit. When this runs on
+  // a later commit (completing a release whose tag or GitHub Release is
+  // missing), the commits made since then belong to the next release.
+  const releaseScope = releaseRev === headRev ? undefined : releaseRev;
+
   let fromVersion: string;
   let bumpType: 'major' | 'minor' | 'patch' | 'transition';
 
@@ -120,7 +125,7 @@ export async function releaseWorkflow(
     const fromTag = `v${fromVersion}`;
     const fromTagInfo = await host.getTag(fromTag);
     const fromRev = fromTagInfo?.rev || null;
-    const commits = await repo.getCommitsSince(fromRev);
+    const commits = await repo.getCommitsSince(fromRev, releaseScope);
     const relevantCommits = filterReleasableCommits(commits);
     const commitList = generateCommitList(relevantCommits);
 
@@ -158,7 +163,7 @@ export async function releaseWorkflow(
   const fromTag = `v${fromVersion}`;
   const fromTagInfo = await host.getTag(fromTag);
   const fromRev = fromTagInfo?.rev || null;
-  const commits = await repo.getCommitsSince(fromRev);
+  const commits = await repo.getCommitsSince(fromRev, releaseScope);
   const relevantCommits = filterReleasableCommits(commits);
   const commitList = generateCommitList(relevantCommits);
 
