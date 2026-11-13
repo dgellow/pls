@@ -16,6 +16,18 @@ deno run -A sim/spec/conformance.ts             # check the simulated API agains
 Requirements: `git` (with `git http-backend`), `deno`, `node` and `npm` for the Node-based tools,
 `jq` and `curl` for workflow steps. Tools are installed into `sim/.cache/` on first use.
 
+## Report
+
+The report (verdict matrix, observations, detail of every failure) is built by the `Simulation`
+workflow (`.github/workflows/sim.yml`) on every push to `main` and on every pull request that
+changes `src/` or `sim/`. Each tool runs in its own job, in parallel; a final job merges the four
+results. The report is on the run's summary page and in the `simulation-report` artifact. The
+`simulation-<tool>` artifacts hold each tool's `results.json` and per-scenario logs. The report is
+not committed: the latest run on `main` is the current state.
+
+Locally, `deno run -A sim/run.ts` followed by `deno run -A sim/report.ts` writes the same report to
+`sim/out/report.md`. `report.ts` takes `--in` several times to merge separate runs.
+
 ## What is simulated
 
 **GitHub** (`sim/github/`). One HTTP server. The REST API, the GraphQL API and git smart HTTP all
