@@ -11,6 +11,7 @@ import { generateReleaseCommitMessage } from './release-metadata.ts';
 
 const VERSION_MARKER = /@pls-version(?![ \t]+\w)/;
 const SEMVER = /\d+\.\d+\.\d+(-[\w.]+)?/;
+const ENTRY_HEADING = /^#{1,6}\s+\[?v?\d+\.\d+\.\d+/;
 
 export interface BuildFilesInput {
   /** New version */
@@ -135,7 +136,11 @@ export function updateVersionFile(
 }
 
 /**
- * Prepend new changelog entry to existing changelog.
+ * Add a release entry to CHANGELOG.md, above the newest existing entry.
+ *
+ * Whatever precedes the first entry stays on top: the title and, in files
+ * that have one, an introduction. An entry is recognised by a heading that
+ * starts with a version ("## 1.2.3", "## [1.2.3] - 2024-01-01", "# v1.2.3").
  */
 export function prependChangelog(
   existing: string | null,
@@ -143,18 +148,22 @@ export function prependChangelog(
 ): string {
   const header = '# Changelog\n\n';
 
-  if (!existing) {
+  if (!existing || existing.trim() === '') {
     return header + newEntry + '\n';
   }
 
-  // Remove existing header if present
-  let body = existing;
-  if (body.startsWith('# Changelog')) {
-    const headerEnd = body.indexOf('\n\n');
-    body = headerEnd > 0 ? body.slice(headerEnd + 2) : '';
+  const lines = existing.split('\n');
+  const firstEntry = lines.findIndex((line) => ENTRY_HEADING.test(line));
+
+  if (firstEntry === -1) {
+    // No entries yet: the file is a title, an introduction, or both.
+    return existing.trimEnd() + '\n\n' + newEntry + '\n';
   }
 
-  return header + newEntry + '\n\n' + body;
+  const preamble = lines.slice(0, firstEntry).join('\n').trimEnd();
+  const entries = lines.slice(firstEntry).join('\n');
+
+  return (preamble === '' ? header : preamble + '\n\n') + newEntry + '\n\n' + entries;
 }
 
 /**
