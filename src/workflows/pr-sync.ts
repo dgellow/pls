@@ -8,7 +8,7 @@ import type { CodeHost } from '../domain/vcs.ts';
 import type { VersionsManifest } from '../domain/types.ts';
 import { classifyStep, nextVersions } from '../domain/bump.ts';
 import { extractChangelogEntry, retitleChangelogEntry } from '../domain/changelog.ts';
-import { buildReleaseFiles } from '../domain/files.ts';
+import { buildReleaseFiles, requireVersionFile } from '../domain/files.ts';
 import { readUpdatableManifests } from '../domain/manifest.ts';
 import { getSelectedVersion, updatePRBody } from '../domain/pr-body.ts';
 import { PlsError } from '../lib/error.ts';
@@ -91,14 +91,11 @@ export async function syncWorkflow(
   const existingChangelog = await host.readFile('CHANGELOG.md', baseBranch);
 
   // Get version file if configured
-  let versionFile: { path: string; content: string } | null = null;
   const versionFilePath = versions['.']?.versionFile;
-  if (versionFilePath) {
-    const content = await host.readFile(versionFilePath, baseBranch);
-    if (content) {
-      versionFile = { path: versionFilePath, content };
-    }
-  }
+  const versionFile = requireVersionFile(
+    versionFilePath,
+    versionFilePath ? await host.readFile(versionFilePath, baseBranch) : null,
+  );
 
   // Determine bump type from selection
   const bumpType = determineBumpType(fromVersion, selectedVersion);

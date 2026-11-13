@@ -2,11 +2,13 @@
  * Tests for release file building.
  */
 
-import { assertEquals } from '@std/assert';
+import { assertEquals, assertThrows } from '@std/assert';
+import { PlsError } from '../lib/error.ts';
 import {
   buildReleaseFiles,
   createInitialVersionsManifest,
   prependChangelog,
+  requireVersionFile,
   updateVersionFile,
   updateVersionsManifest,
 } from './files.ts';
@@ -341,5 +343,71 @@ Deno.test('buildReleaseFiles', async (t) => {
     assertEquals(files.has('package.json'), true);
     assertEquals(JSON.parse(files.get('deno.json')!).version, '2.0.0');
     assertEquals(JSON.parse(files.get('package.json')!).version, '2.0.0');
+  });
+});
+
+Deno.test('a version file that cannot be updated stops the release', async (t) => {
+  const base = {
+    version: '1.1.0',
+    from: '1.0.0',
+    type: 'minor' as const,
+    manifests: [],
+    versionsJson: '{ ".": { "version": "1.0.0", "versionFile": "src/build-info.txt" } }',
+    changelog: '## 1.1.0',
+    existingChangelog: null,
+  };
+
+  await t.step('no @pls-version marker', () => {
+    const error = assertThrows(
+      () =>
+        buildReleaseFiles({
+          ...base,
+          versionFile: { path: 'src/build-info.txt', content: 'VERSION=1.0.0\n' },
+        }),
+      PlsError,
+    );
+
+    assertEquals(error.code, 'VERSION_FILE_NO_MARKER');
+    assertEquals(error.message.includes('src/build-info.txt'), true);
+    assertEquals(error.message.includes('@pls-version'), true);
+  });
+
+  await t.step('a marker with no version on the next line', () => {
+    const error = assertThrows(
+      () =>
+        buildReleaseFiles({
+          ...base,
+          versionFile: { path: 'v.sh', content: '# @pls-version\n\nVERSION="1.0.0"\n' },
+        }),
+      PlsError,
+    );
+
+    assertEquals(error.code, 'VERSION_FILE_NO_MARKER');
+  });
+
+  await t.step('a marked file is updated', () => {
+    const { files } = buildReleaseFiles({
+      ...base,
+      versionFile: { path: 'v.sh', content: '# @pls-version\nVERSION="1.0.0"\n' },
+    });
+
+    assertEquals(files.get('v.sh'), '# @pls-version\nVERSION="1.1.0"\n');
+  });
+});
+
+Deno.test('requireVersionFile', async (t) => {
+  await t.step('no version file configured', () => {
+    assertEquals(requireVersionFile(undefined, null), null);
+  });
+
+  await t.step('a configured file with content', () => {
+    assertEquals(requireVersionFile('v.ts', 'x'), { path: 'v.ts', content: 'x' });
+  });
+
+  await t.step('a configured file that does not exist is an error', () => {
+    const error = assertThrows(() => requireVersionFile('src/version.ts', null), PlsError);
+
+    assertEquals(error.code, 'VERSION_FILE_NOT_FOUND');
+    assertEquals(error.message.includes('src/version.ts'), true);
   });
 });

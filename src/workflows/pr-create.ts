@@ -9,7 +9,11 @@ import type { FileChanges, PullRequest, VersionBump, VersionsManifest } from '..
 import { calculateBump, classifyStep, nextVersions } from '../domain/bump.ts';
 import { filterReleasableCommits } from '../domain/commits.ts';
 import { generateChangelog, generateReleaseNotes } from '../domain/changelog.ts';
-import { buildReleaseFiles, createInitialVersionsManifest } from '../domain/files.ts';
+import {
+  buildReleaseFiles,
+  createInitialVersionsManifest,
+  requireVersionFile,
+} from '../domain/files.ts';
 import { detectManifest, readUpdatableManifests } from '../domain/manifest.ts';
 import { generateBootstrapPRBody, generatePRBody, getUserOverride } from '../domain/pr-body.ts';
 import { PlsError } from '../lib/error.ts';
@@ -105,14 +109,11 @@ export async function prepWorkflow(
   const existingChangelog = await host.readFile('CHANGELOG.md', baseBranch);
 
   // Get version file if configured
-  let versionFile: { path: string; content: string } | null = null;
   const versionFilePath = versions['.']?.versionFile;
-  if (versionFilePath) {
-    const content = await host.readFile(versionFilePath, baseBranch);
-    if (content) {
-      versionFile = { path: versionFilePath, content };
-    }
-  }
+  const versionFile = requireVersionFile(
+    versionFilePath,
+    versionFilePath ? await host.readFile(versionFilePath, baseBranch) : null,
+  );
 
   const { files, commitMessage } = buildReleaseFiles({
     version: selectedVersion,

@@ -8,6 +8,7 @@ import type { FileChanges, ReleaseMetadata, VersionsManifest } from './types.ts'
 import type { UpdatableManifest } from './manifest.ts';
 import { updateManifestVersion } from './manifest.ts';
 import { generateReleaseCommitMessage } from './release-metadata.ts';
+import { PlsError } from '../lib/error.ts';
 
 const VERSION_MARKER = /@pls-version(?![ \t]+\w)/;
 const SEMVER = /\d+\.\d+\.\d+(-[\w.]+)?/;
@@ -56,12 +57,25 @@ export function buildReleaseFiles(input: BuildFilesInput): BuildFilesOutput {
   );
   files.set('.pls/versions.json', versionsJson);
 
-  // 3. Update version file (if configured)
+  // 3. Update version file (if configured). A file pls cannot update would
+  // ship the old version constant in the new release, so it stops the release.
   if (input.versionFile) {
     const updated = updateVersionFile(input.versionFile.content, input.version);
-    if (updated) {
-      files.set(input.versionFile.path, updated);
+    if (updated === null) {
+      throw new PlsError(
+        `Version file "${input.versionFile.path}" has no version pls can update, ` +
+          `so the release would ship it at ${input.from}.\n` +
+          `Put a comment containing @pls-version on the line directly above the version:\n` +
+          `  // @pls-version           (TypeScript/Go/Java)\n` +
+          `  export const VERSION = '${input.from}';\n\n` +
+          `  # @pls-version            (Python/Ruby/Shell)\n` +
+          `  __version__ = '${input.from}'\n\n` +
+          `Or remove "versionFile" from .pls/versions.json if the file should not be tracked.`,
+        'VERSION_FILE_NO_MARKER',
+        { path: input.versionFile.path },
+      );
     }
+    files.set(input.versionFile.path, updated);
   }
 
   // 4. Update CHANGELOG.md
@@ -77,6 +91,26 @@ export function buildReleaseFiles(input: BuildFilesInput): BuildFilesOutput {
   const commitMessage = generateReleaseCommitMessage(metadata);
 
   return { files, commitMessage };
+}
+
+/**
+ * The version file configured in .pls/versions.json, read by the caller.
+ * A configured file that does not exist is an error, not "no version file".
+ */
+export function requireVersionFile(
+  path: string | undefined,
+  content: string | null,
+): { path: string; content: string } | null {
+  if (!path) return null;
+  if (content === null) {
+    throw new PlsError(
+      `Version file "${path}" is configured in .pls/versions.json but does not exist.\n` +
+        `Restore the file, or remove "versionFile" from .pls/versions.json.`,
+      'VERSION_FILE_NOT_FOUND',
+      { path },
+    );
+  }
+  return { path, content };
 }
 
 /**
