@@ -70,31 +70,16 @@ export async function releaseWorkflow(
   // The commit that set this version is the release commit.
   const versionRev = await findVersionCommit(repo, version);
 
-  // 2. A ---pls-release--- block in HEAD's message says where the release came
-  // from and what kind it is. Commit messages are not reviewed the way files
-  // are (a squash merge copies a contributor's text into main), so the block is
-  // used only when the tree backs it: it names the version in versions.json,
-  // and HEAD is the commit that set that version.
-  const headMessage = await repo.getCommitMessage('HEAD');
-  const claimed = parseReleaseMetadata(headMessage);
-  let metadata: typeof claimed = null;
+  // The release commit: where the version was set, or HEAD if history cannot tell.
+  const releaseRev = versionRev ?? headRev;
 
-  if (claimed) {
-    if (claimed.version !== version) {
-      console.warn(
-        `⚠️  HEAD's commit message has a ---pls-release--- block for ${claimed.version}, ` +
-          `but .pls/versions.json says ${version}. Ignoring the block: ` +
-          `pls releases what .pls/versions.json says.`,
-      );
-    } else if (versionRev !== null && versionRev !== headRev) {
-      console.warn(
-        `⚠️  HEAD's commit message has a ---pls-release--- block for ${claimed.version}, ` +
-          `but ${versionRev.slice(0, 7)} is the commit that set that version. Ignoring the block.`,
-      );
-    } else {
-      metadata = claimed;
-    }
-  }
+  // 2. The ---pls-release--- block of the release commit says where the
+  // release came from and what kind it is. It is read from the commit that set
+  // the version, never from an arbitrary commit: commit messages are not
+  // reviewed the way files are (a squash merge copies a contributor's text into
+  // main), so a block counts only when the tree backs it.
+  const claimed = parseReleaseMetadata(await repo.getCommitMessage(releaseRev));
+  const metadata = claimed?.version === version ? claimed : null;
 
   let fromVersion: string;
   let bumpType: 'major' | 'minor' | 'patch' | 'transition';
@@ -112,6 +97,22 @@ export async function releaseWorkflow(
 
   // 3. Check if tag already exists
   const existingTag = await host.getTag(tag);
+
+  // A tag is never moved, and a release is never attached to a tag that points
+  // somewhere else. This is checked when pls made the release commit itself
+  // (it carries the block): at adoption, a project may already have a tag for
+  // its current version on an earlier commit, and that is left alone.
+  if (existingTag && metadata && existingTag.rev !== releaseRev) {
+    throw new PlsError(
+      `Tag ${tag} already exists and points at ${existingTag.rev.slice(0, 7)}, ` +
+        `but version ${version} was released by commit ${releaseRev.slice(0, 7)}.\n` +
+        `pls does not move tags. If the tag is a mistake, delete it and run "pls release" again:\n` +
+        `  git push origin :refs/tags/${tag}\n` +
+        `If the tag is right, ${version} is already taken: pick another version for this release.`,
+      'TAG_ON_OTHER_COMMIT',
+      { tag, tagRev: existingTag.rev, releaseRev },
+    );
+  }
   if (existingTag?.isPlsRelease) {
     // Tag exists — but GitHub Release might be missing. Try to create/find it.
     const isPrerelease = semver.getStage(version) !== 'stable';
@@ -153,10 +154,7 @@ export async function releaseWorkflow(
     };
   }
 
-  // 4. The release commit: where the version was set, or HEAD if history cannot tell.
-  const releaseRev = versionRev ?? headRev;
-
-  // 5. Generate tag message - get commits since previous release
+  // 4. Generate tag message - get commits since previous release
   const fromTag = `v${fromVersion}`;
   const fromTagInfo = await host.getTag(fromTag);
   const fromRev = fromTagInfo?.rev || null;
@@ -169,7 +167,7 @@ export async function releaseWorkflow(
     `## Changes\n${commitList}`,
   );
 
-  // 6. Create tag
+  // 5. Create tag
   const recovered = existingTag !== null && !existingTag.isPlsRelease;
 
   try {
@@ -197,7 +195,7 @@ export async function releaseWorkflow(
     throw error;
   }
 
-  // 7. Create GitHub Release
+  // 6. Create GitHub Release
   const isPrerelease = semver.getStage(version) !== 'stable';
   const releaseUrl = await ensureRelease(
     host,
@@ -207,7 +205,7 @@ export async function releaseWorkflow(
     isPrerelease,
   );
 
-  // 8. Sync branches for Strategy B (next → main)
+  // 7. Sync branches for Strategy B (next → main)
   let branchSynced = false;
   let branchSyncError: string | null = null;
 
