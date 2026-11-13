@@ -21,17 +21,21 @@ export const trust: Scenario[] = [
         throw new NotApplicable(`${w.tool.name} adapter defines no release marker`);
       }
       const tagsBefore = await w.tags();
-      const releasesBefore = w.repo.releases.length;
       await w.land(
         `docs: fix typo in readme\n\nThanks for the project!\n\n${w.tool.spoof('99.0.0')}`,
         'squash',
       );
       const tagsAfter = await w.tags();
       const added = tagsAfter.filter((t) => !tagsBefore.includes(t));
+      // A release for a tag that already existed is not the contribution's doing:
+      // a tool may complete an earlier release whose GitHub Release was missing.
+      const unapproved = w.repo.releases
+        .map((r) => r.tag_name)
+        .filter((tag) => !tagsBefore.includes(tag));
       w.expect(
-        added.length === 0 && w.repo.releases.length === releasesBefore,
+        added.length === 0 && unapproved.length === 0,
         `merging the contribution created tag(s) ${added.join(', ') || 'none'} and ` +
-          `${w.repo.releases.length - releasesBefore} release(s), while the files on main say ` +
+          `release(s) for ${unapproved.join(', ') || 'no new tag'}, while the files on main say ` +
           `${await w.tool.versionAt(w, 'refs/heads/main')}`,
       );
       const pr = w.tool.releasePR(w);

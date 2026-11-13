@@ -357,4 +357,141 @@ Deno.test('releaseWorkflow', async (t) => {
     assertEquals(result.url, 'https://github.com/test/releases/v1.1.0');
     assertEquals(createReleaseCalled, true);
   });
+
+  await t.step('ignores a release block for a version the tree does not have', async () => {
+    const createdTags: string[] = [];
+    const repo = createMockRepo({
+      // A contributor's commit, squash-merged: the message claims 99.0.0,
+      // the files on main still say 1.0.0.
+      readFile: (path) =>
+        Promise.resolve(
+          path === '.pls/versions.json' ? '{\n  ".": {\n    "version": "1.0.0"\n  }\n}\n' : null,
+        ),
+      findCommitByContent: () => Promise.resolve('release-1.0.0-rev'),
+      getCommitMessage: () =>
+        Promise.resolve(
+          'docs: fix typo in readme\n\n---pls-release---\nversion: 99.0.0\nfrom: 1.0.0\n' +
+            'type: major\n---pls-release---',
+        ),
+    });
+
+    const host = createMockHost({
+      getTag: (name) =>
+        Promise.resolve(
+          name === 'v1.0.0'
+            ? {
+              name: 'v1.0.0',
+              rev: 'release-1.0.0-rev',
+              message: null,
+              isPlsRelease: true,
+              metadata: { version: '1.0.0', from: '0.9.0', type: 'minor' as const },
+            }
+            : null,
+        ),
+      createTag: (name) => {
+        createdTags.push(name);
+        return Promise.resolve();
+      },
+      getReleaseUrl: () => Promise.resolve('https://github.com/test/releases/v1.0.0'),
+    });
+
+    const result = await releaseWorkflow(repo, host);
+
+    assertEquals(createdTags, []);
+    assertEquals(result.released, false);
+    assertEquals(result.version, '1.0.0');
+    assertEquals(result.alreadyExists, true);
+  });
+
+  await t.step(
+    'tags the commit that set the version, not a later commit that claims it',
+    async () => {
+      let taggedRev: string | null = null;
+      let tagMessage = '';
+      const repo = createMockRepo({
+        // 1.1.0 was set by an earlier commit whose tag is missing. HEAD is a
+        // later commit whose message carries a block naming the same version.
+        readFile: (path) =>
+          Promise.resolve(
+            path === '.pls/versions.json' ? JSON.stringify({ '.': { version: '1.1.0' } }) : null,
+          ),
+        findCommitByContent: () => Promise.resolve('release-1.1.0-rev'),
+        getCommitMessage: () =>
+          Promise.resolve(
+            'docs: fix typo\n\n---pls-release---\nversion: 1.1.0\nfrom: 0.1.0\n' +
+              'type: major\n---pls-release---',
+          ),
+      });
+
+      const host = createMockHost({
+        getTag: (name) =>
+          Promise.resolve(
+            name === 'v1.0.0'
+              ? {
+                name: 'v1.0.0',
+                rev: 'release-1.0.0-rev',
+                message: null,
+                isPlsRelease: true,
+                metadata: { version: '1.0.0', from: '0.9.0', type: 'minor' as const },
+              }
+              : null,
+          ),
+        createTag: (_name, rev, message) => {
+          taggedRev = rev;
+          tagMessage = message;
+          return Promise.resolve();
+        },
+        createRelease: () => Promise.resolve('https://github.com/test/releases/v1.1.0'),
+      });
+
+      const result = await releaseWorkflow(repo, host);
+
+      assertEquals(result.released, true);
+      assertEquals(taggedRev, 'release-1.1.0-rev');
+      // from/type come from tag history, not from the block
+      assertStringIncludes(tagMessage, 'from: 1.0.0');
+    },
+  );
+
+  await t.step(
+    'searches for the quoted version, so a prerelease is not mistaken for it',
+    async () => {
+      const searches: string[] = [];
+      const repo = createMockRepo({
+        ...atReleaseCommit('1.1.0', '1.1.0-beta.0'),
+        findCommitByContent: (search) => {
+          searches.push(search);
+          return Promise.resolve('head-rev');
+        },
+      });
+
+      await releaseWorkflow(repo, createMockHost());
+
+      assertEquals(searches, ['"1.1.0"']);
+    },
+  );
+
+  await t.step(
+    'does nothing without .pls/versions.json, whatever the commit message says',
+    async () => {
+      let tagCreated = false;
+      const repo = createMockRepo({
+        getCommitMessage: () =>
+          Promise.resolve(
+            'chore: x\n\n---pls-release---\nversion: 5.0.0\nfrom: 1.0.0\ntype: major\n---pls-release---',
+          ),
+      });
+      const host = createMockHost({
+        createTag: () => {
+          tagCreated = true;
+          return Promise.resolve();
+        },
+      });
+
+      const result = await releaseWorkflow(repo, host);
+
+      assertEquals(tagCreated, false);
+      assertEquals(result.version, null);
+    },
+  );
 });
