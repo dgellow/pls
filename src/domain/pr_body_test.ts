@@ -9,6 +9,7 @@ import {
   generateOptionsBlock,
   generatePRBody,
   getSelectedVersion,
+  getUserOverride,
   parseOptionsBlock,
   updatePRBody,
 } from './pr-body.ts';
@@ -351,5 +352,111 @@ Deno.test('generateBootstrapPRBody', async (t) => {
 
     assertEquals(body.includes('<!-- pls:options -->'), false);
     assertEquals(body.includes('Switch to:'), false);
+  });
+});
+
+Deno.test('generateOptions offers the other bump types', async (t) => {
+  const versions = (bump: VersionBump, selected?: string) =>
+    generateOptions(bump, selected).filter((o) => !o.disabled).map((o) =>
+      `${o.version} ${o.label}`
+    );
+
+  await t.step('minor calculated: major and patch are offered', () => {
+    assertEquals(versions(makeBump('1.0.0', '1.1.0', 'minor')), [
+      '1.1.0 minor',
+      '1.1.0-alpha.0 alpha',
+      '1.1.0-beta.0 beta',
+      '1.1.0-rc.0 rc',
+      '2.0.0 major',
+      '1.0.1 patch',
+    ]);
+  });
+
+  await t.step('major calculated: minor and patch are offered', () => {
+    assertEquals(versions(makeBump('1.2.3', '2.0.0', 'major')), [
+      '2.0.0 major',
+      '2.0.0-alpha.0 alpha',
+      '2.0.0-beta.0 beta',
+      '2.0.0-rc.0 rc',
+      '1.3.0 minor',
+      '1.2.4 patch',
+    ]);
+  });
+
+  await t.step('before 1.0 the major step is the stable 1.0.0', () => {
+    assertEquals(versions(makeBump('0.3.0', '0.4.0', 'minor')), [
+      '0.4.0 minor',
+      '0.4.0-alpha.0 alpha',
+      '0.4.0-beta.0 beta',
+      '0.4.0-rc.0 rc',
+      '1.0.0 stable',
+      '0.3.1 patch',
+    ]);
+  });
+
+  await t.step('exactly one option is selected, the calculated one by default', () => {
+    const options = generateOptions(makeBump('1.0.0', '1.1.0', 'minor'));
+    assertEquals(options.filter((o) => o.selected).map((o) => o.version), ['1.1.0']);
+  });
+
+  await t.step('a chosen version is selected and the calculated one stays on offer', () => {
+    const options = generateOptions(makeBump('1.0.0', '1.1.0', 'minor'), '2.0.0');
+    assertEquals(options.filter((o) => o.selected).map((o) => o.version), ['2.0.0']);
+    assertEquals(options.some((o) => o.version === '1.1.0' && !o.selected), true);
+  });
+
+  await t.step('a chosen version outside the list is added so it can be shown', () => {
+    const options = generateOptions(makeBump('1.0.0', '1.1.0', 'minor'), '2.0.0-beta.0');
+    const selected = options.filter((o) => o.selected);
+    assertEquals(selected.map((o) => `${o.version} ${o.label} ${o.type}`), [
+      '2.0.0-beta.0 beta transition',
+    ]);
+  });
+});
+
+Deno.test('a chosen version is marked in the PR body', async (t) => {
+  const bump = makeBump('1.0.0', '1.1.0', 'minor');
+
+  await t.step('a calculated current version is not an override', () => {
+    const body = generatePRBody(bump, 'changes');
+    assertEquals(body.includes(':current:chosen'), false);
+    assertEquals(getUserOverride(body), null);
+    assertEquals(parseOptionsBlock(body)?.chosen, false);
+  });
+
+  await t.step('a ticked checkbox is an override', () => {
+    const body = generatePRBody(bump, 'changes').replace('- [ ] 2.0.0 ', '- [x] 2.0.0 ');
+    assertEquals(getUserOverride(body), '2.0.0');
+  });
+
+  await t.step('after a sync the chosen version is current, and still an override', () => {
+    const ticked = generatePRBody(bump, 'changes').replace(
+      '- [ ] 1.1.0-beta.0 ',
+      '- [x] 1.1.0-beta.0 ',
+    );
+    const synced = updatePRBody(ticked, '1.1.0-beta.0');
+
+    assertEquals(synced.includes('[x]'), false);
+    assertEquals(synced.includes('## Release 1.1.0-beta.0'), true);
+    assertEquals(synced.includes('<!-- pls:v:1.1.0-beta.0:transition:current:chosen -->'), true);
+    assertEquals(getSelectedVersion(synced), '1.1.0-beta.0');
+    assertEquals(getUserOverride(synced), '1.1.0-beta.0');
+    // The calculated version is still there to go back to.
+    assertEquals(synced.includes('- [ ] 1.1.0 (minor)'), true);
+  });
+
+  await t.step('generatePRBody with a chosen version shows it as current', () => {
+    const body = generatePRBody(bump, 'changes', '2.0.0');
+    assertEquals(body.includes('## Release 2.0.0'), true);
+    assertEquals(body.includes('**Current: 2.0.0** (major)'), true);
+    assertEquals(getUserOverride(body), '2.0.0');
+    // Re-parsing and re-rendering keeps the labels as they were.
+    assertEquals(updatePRBody(body, '2.0.0').includes('**Current: 2.0.0** (major)'), true);
+  });
+
+  await t.step('a ticked disabled option is not an override', () => {
+    const body = generatePRBody(makeBump('1.0.0-beta.0', '1.0.0-beta.1', 'patch'), 'changes')
+      .replace('- [ ] ~~1.0.0-alpha.0~~', '- [x] ~~1.0.0-alpha.0~~');
+    assertEquals(getUserOverride(body), null);
   });
 });

@@ -3,7 +3,7 @@
  */
 
 import { assertEquals } from '@std/assert';
-import { calculateBump, determineBumpType } from './bump.ts';
+import { calculateBump, classifyStep, determineBumpType, nextVersions } from './bump.ts';
 import type { Commit } from './types.ts';
 
 const makeCommit = (
@@ -115,4 +115,48 @@ Deno.test('calculateBump', async (t) => {
     assertEquals(result?.to, '1.2.3-alpha.1');
     assertEquals(result?.type, 'minor');
   });
+});
+
+Deno.test('nextVersions', async (t) => {
+  await t.step('from stable: each bump type, stable or as a first prerelease', () => {
+    assertEquals(nextVersions('1.2.3'), [
+      '1.2.4',
+      '1.2.4-alpha.0',
+      '1.2.4-beta.0',
+      '1.2.4-rc.0',
+      '1.3.0',
+      '1.3.0-alpha.0',
+      '1.3.0-beta.0',
+      '1.3.0-rc.0',
+      '2.0.0',
+      '2.0.0-alpha.0',
+      '2.0.0-beta.0',
+      '2.0.0-rc.0',
+    ]);
+  });
+
+  await t.step('from a prerelease: next build, later stages, stable', () => {
+    assertEquals(nextVersions('1.3.0-alpha.2'), [
+      '1.3.0-alpha.3',
+      '1.3.0-beta.0',
+      '1.3.0-rc.0',
+      '1.3.0',
+    ]);
+    assertEquals(nextVersions('1.3.0-rc.0'), ['1.3.0-rc.1', '1.3.0']);
+  });
+
+  await t.step('does not contain arbitrary versions', () => {
+    const allowed = nextVersions('1.0.0');
+    for (const version of ['9.9.9-evil.1', '1.0.0', '0.9.0', '3.0.0', '1.1.0-beta.1', '1.1.1']) {
+      assertEquals(allowed.includes(version), false, version);
+    }
+  });
+});
+
+Deno.test('classifyStep', () => {
+  assertEquals(classifyStep('1.2.3', '2.0.0'), 'major');
+  assertEquals(classifyStep('1.2.3', '1.3.0'), 'minor');
+  assertEquals(classifyStep('1.2.3', '1.2.4'), 'patch');
+  assertEquals(classifyStep('1.2.3', '1.3.0-beta.0'), 'transition');
+  assertEquals(classifyStep('1.3.0-rc.1', '1.3.0'), 'transition');
 });

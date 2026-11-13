@@ -3,7 +3,13 @@
  */
 
 import { assertEquals } from '@std/assert';
-import { generateChangelog, generateCommitList, generateReleaseNotes } from './changelog.ts';
+import {
+  extractChangelogEntry,
+  generateChangelog,
+  generateCommitList,
+  generateReleaseNotes,
+  retitleChangelogEntry,
+} from './changelog.ts';
 import { prependChangelog } from './files.ts';
 import type { Commit, VersionBump } from './types.ts';
 
@@ -245,4 +251,52 @@ Deno.test('changelog output is deno fmt compatible', async (t) => {
     const changelog = prependChangelog(existing, notes);
     await assertDenoFmtCompatible(changelog, 'appending to existing');
   });
+});
+
+Deno.test('extractChangelogEntry', async (t) => {
+  const changelog = [
+    '# Changelog',
+    '',
+    '## 1.1.0',
+    '',
+    '### Features',
+    '',
+    '- add export command',
+    '',
+    '### Bug Fixes',
+    '',
+    '- handle empty input',
+    '',
+    '## 1.0.0',
+    '',
+    '- Initial release',
+    '',
+  ].join('\n');
+
+  await t.step('returns the heading and everything up to the next entry', () => {
+    assertEquals(
+      extractChangelogEntry(changelog, '1.1.0'),
+      '## 1.1.0\n\n### Features\n\n- add export command\n\n### Bug Fixes\n\n- handle empty input',
+    );
+  });
+
+  await t.step('returns the last entry up to the end of the file', () => {
+    assertEquals(extractChangelogEntry(changelog, '1.0.0'), '## 1.0.0\n\n- Initial release');
+  });
+
+  await t.step('does not match a version that only starts the same', () => {
+    assertEquals(extractChangelogEntry('## 1.1.0-beta.0\n\n- x\n', '1.1.0'), null);
+  });
+
+  await t.step('returns null when there is no such entry', () => {
+    assertEquals(extractChangelogEntry(changelog, '2.0.0'), null);
+    assertEquals(extractChangelogEntry('Version changed from 1.0.0 to 1.1.0\n', '1.1.0'), null);
+  });
+});
+
+Deno.test('retitleChangelogEntry changes only the heading', () => {
+  assertEquals(
+    retitleChangelogEntry('## 1.1.0\n\n### Features\n\n- add 1.1.0 support', '1.1.0-beta.0'),
+    '## 1.1.0-beta.0\n\n### Features\n\n- add 1.1.0 support',
+  );
 });

@@ -149,3 +149,27 @@ export function generateCommitList(commits: Commit[]): string {
     })
     .join('\n');
 }
+
+/**
+ * The entry for `version` in a CHANGELOG.md: its `## version` heading and
+ * everything up to the next entry. Null if the file has no such entry.
+ */
+export function extractChangelogEntry(changelog: string, version: string): string | null {
+  const lines = changelog.split('\n');
+  const start = lines.findIndex((line) => line.trimEnd() === `## ${version}`);
+  if (start === -1) return null;
+
+  let end = lines.findIndex((line, i) => i > start && line.startsWith('## '));
+  if (end === -1) end = lines.length;
+
+  return lines.slice(start, end).join('\n').trimEnd();
+}
+
+/**
+ * The same changelog entry under another version's heading.
+ */
+export function retitleChangelogEntry(entry: string, version: string): string {
+  const lines = entry.split('\n');
+  lines[0] = `## ${version}`;
+  return lines.join('\n');
+}

@@ -6,6 +6,8 @@
 
 import type { CodeHost } from '../domain/vcs.ts';
 import type { VersionsManifest } from '../domain/types.ts';
+import { classifyStep, nextVersions } from '../domain/bump.ts';
+import { extractChangelogEntry, retitleChangelogEntry } from '../domain/changelog.ts';
 import { buildReleaseFiles } from '../domain/files.ts';
 import { readUpdatableManifests } from '../domain/manifest.ts';
 import { getSelectedVersion, updatePRBody } from '../domain/pr-body.ts';
@@ -40,15 +42,19 @@ export async function syncWorkflow(
     return { synced: false, oldVersion: null, newVersion: null };
   }
 
-  // 3. Extract current version from title
-  const titleMatch = pr.title.match(/v(\d+\.\d+\.\d+(?:-[a-z]+\.\d+)?)/);
-  const currentTitleVersion = titleMatch ? titleMatch[1] : null;
+  // 3. The version the release branch holds now. The branch is what gets
+  // merged, so it decides whether there is anything to do. The PR title does
+  // not: people reword titles.
+  const branchVersionsContent = await host.readFile('.pls/versions.json', pr.branch);
+  const branchVersion = branchVersionsContent
+    ? (JSON.parse(branchVersionsContent) as VersionsManifest)['.']?.version ?? null
+    : null;
 
   // 4. Check if already synced
-  if (currentTitleVersion === selectedVersion) {
+  if (branchVersion === selectedVersion) {
     return {
       synced: false,
-      oldVersion: currentTitleVersion,
+      oldVersion: branchVersion,
       newVersion: selectedVersion,
     };
   }
@@ -65,7 +71,22 @@ export async function syncWorkflow(
     throw new PlsError('No root version found', 'NO_ROOT_VERSION');
   }
 
-  // 6. Build files for new version
+  // 6. The selection comes from the PR body, which anyone who can edit the PR
+  // can change. Accept only a version pls would propose itself.
+  const allowed = nextVersions(fromVersion);
+  if (!allowed.includes(selectedVersion)) {
+    throw new PlsError(
+      `The release PR selects version "${selectedVersion}", which is not one release step ` +
+        `from ${fromVersion}.\n` +
+        `Versions pls accepts here: ${allowed.join(', ')}.\n` +
+        `Edit the PR description: tick one of the listed options and remove any other change ` +
+        `to the version list.`,
+      'VERSION_NOT_ALLOWED',
+      { selected: selectedVersion, from: fromVersion, allowed },
+    );
+  }
+
+  // 7. Build files for new version
   const manifests = await readUpdatableManifests((p) => host.readFile(p, baseBranch));
   const existingChangelog = await host.readFile('CHANGELOG.md', baseBranch);
 
@@ -82,8 +103,23 @@ export async function syncWorkflow(
   // Determine bump type from selection
   const bumpType = determineBumpType(fromVersion, selectedVersion);
 
-  // Generate minimal changelog for sync
-  const changelog = `Version changed from ${fromVersion} to ${selectedVersion}`;
+  // The changelog entry is the one `pls prep` wrote to the release branch,
+  // under the new version's heading. Only the version changes here.
+  const branchChangelog = await host.readFile('CHANGELOG.md', pr.branch);
+  const entry = branchVersion && branchChangelog
+    ? extractChangelogEntry(branchChangelog, branchVersion)
+    : null;
+  if (!entry) {
+    throw new PlsError(
+      `Cannot switch the release to ${selectedVersion}: CHANGELOG.md on "${pr.branch}" has no ` +
+        `"## ${branchVersion ?? '<version>'}" entry to carry over.\n` +
+        `Run "pls prep" (or push to ${baseBranch}) to rebuild the release PR, then select the ` +
+        `version again.`,
+      'CHANGELOG_ENTRY_NOT_FOUND',
+      { branch: pr.branch, branchVersion, selected: selectedVersion },
+    );
+  }
+  const changelog = retitleChangelogEntry(entry, selectedVersion);
 
   const { files, commitMessage } = buildReleaseFiles({
     version: selectedVersion,
@@ -96,7 +132,7 @@ export async function syncWorkflow(
     existingChangelog,
   });
 
-  // 7. Create new commit from base branch
+  // 8. Create new commit from base branch
   const baseRev = await host.getBranchRevision(baseBranch);
   if (!baseRev) {
     throw new PlsError(`Base branch ${baseBranch} not found`, 'BRANCH_NOT_FOUND');
@@ -104,10 +140,10 @@ export async function syncWorkflow(
 
   const commitRev = await host.commit(files, commitMessage, baseRev);
 
-  // 8. Force update PR branch (single commit principle)
+  // 9. Force update PR branch (single commit principle)
   await host.pointBranch(pr.branch, commitRev, true);
 
-  // 9. Update PR title and body
+  // 10. Update PR title and body
   const newTitle = `chore: release v${selectedVersion}`;
   const newBody = updatePRBody(pr.body, selectedVersion);
 
@@ -118,7 +154,7 @@ export async function syncWorkflow(
 
   return {
     synced: true,
-    oldVersion: currentTitleVersion,
+    oldVersion: branchVersion,
     newVersion: selectedVersion,
   };
 }
@@ -131,15 +167,5 @@ export function determineBumpType(
   from: string,
   to: string,
 ): 'major' | 'minor' | 'patch' | 'transition' {
-  // Check for prerelease transitions (to or from prerelease)
-  if (to.includes('-') || from.includes('-')) {
-    return 'transition';
-  }
-
-  const [fromMajor, fromMinor] = from.split('.').map(Number);
-  const [toMajor, toMinor] = to.split('.').map(Number);
-
-  if (toMajor > fromMajor) return 'major';
-  if (toMinor > fromMinor) return 'minor';
-  return 'patch';
+  return classifyStep(from, to);
 }
