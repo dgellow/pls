@@ -12,6 +12,7 @@ import { buildReleaseFiles, requireVersionFile } from '../domain/files.ts';
 import { readUpdatableManifests } from '../domain/manifest.ts';
 import { getSelectedVersion, updatePRBody } from '../domain/pr-body.ts';
 import { PlsError } from '../lib/error.ts';
+import { findForeignCommits, reportDiscardedCommits } from './release-branch.ts';
 
 export interface SyncResult {
   synced: boolean;
@@ -137,6 +138,9 @@ export async function syncWorkflow(
 
   const commitRev = await host.commit(files, commitMessage, baseRev);
 
+  // Commits someone pushed to the release branch are about to be replaced.
+  const discarded = await findForeignCommits(host, baseBranch, pr.branch);
+
   // 9. Force update PR branch (single commit principle)
   await host.pointBranch(pr.branch, commitRev, true);
 
@@ -148,6 +152,7 @@ export async function syncWorkflow(
     title: newTitle,
     body: newBody,
   });
+  await reportDiscardedCommits(host, prNumber, baseBranch, discarded);
 
   return {
     synced: true,

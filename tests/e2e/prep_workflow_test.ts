@@ -86,6 +86,8 @@ function createStatefulHost(
       }
       return Promise.resolve();
     },
+    getCommitsAhead: () => Promise.resolve([]),
+    commentOnPR: () => Promise.resolve(),
     createRelease: () => Promise.resolve(''),
     releaseExists: () => Promise.resolve(false),
     getReleaseUrl: () => Promise.resolve(null),

@@ -4,8 +4,8 @@
  */
 
 import { assertEquals, assertRejects } from '@std/assert';
-import type { CodeHost, LocalRepo } from '../domain/vcs.ts';
-import type { Commit, FileChanges } from '../domain/types.ts';
+import type { CodeHost, HostCommit, LocalRepo } from '../domain/vcs.ts';
+import type { Commit, FileChanges, PullRequest } from '../domain/types.ts';
 import { PlsError } from '../lib/error.ts';
 import { prepWorkflow } from './pr-create.ts';
 
@@ -27,7 +27,13 @@ function commit(description: string): Commit {
  * A repository at 1.0.0 whose base branch points at each of `tips` in turn,
  * one per time prep asks. `history` maps a tip to the commits since v1.0.0.
  */
-function fixture(tips: string[], history: Record<string, Commit[]>) {
+function fixture(
+  tips: string[],
+  history: Record<string, Commit[]>,
+  existingPR: PullRequest | null = null,
+  ahead: HostCommit[] = [],
+) {
+  const comments: string[] = [];
   const asked: string[] = [];
   const reads: Array<string | undefined> = [];
   const commits: Array<{ parent: string; changelog: string }> = [];
@@ -58,7 +64,13 @@ function fixture(tips: string[], history: Record<string, Commit[]>) {
         isPlsRelease: true,
         metadata: null,
       }),
-    findPR: () => Promise.resolve(null),
+    findPR: () => Promise.resolve(existingPR),
+    updatePR: () => Promise.resolve(),
+    getCommitsAhead: () => Promise.resolve(ahead),
+    commentOnPR: (_number: number, body: string) => {
+      comments.push(body);
+      return Promise.resolve();
+    },
     commit: (files: FileChanges, _message: string, parent: string) => {
       commits.push({ parent, changelog: files.get('CHANGELOG.md') ?? '' });
       return Promise.resolve(`release-on-${parent}`);
@@ -79,7 +91,7 @@ function fixture(tips: string[], history: Record<string, Commit[]>) {
     },
   } as unknown as CodeHost;
 
-  return { repo, host, asked, reads, commits, branchUpdates, prBodies };
+  return { repo, host, asked, reads, commits, branchUpdates, prBodies, comments };
 }
 
 const options = { baseBranch: 'main', releaseBranch: 'pls-release', dryRun: false };
@@ -133,5 +145,36 @@ Deno.test('prepWorkflow and a moving base branch', async (t) => {
     assertEquals(result.dryRun, true);
     assertEquals(f.commits, []);
     assertEquals(f.branchUpdates, []);
+  });
+});
+
+Deno.test('prepWorkflow and commits pushed to the release branch', async (t) => {
+  const pr: PullRequest = { number: 9, title: 't', body: '', branch: 'pls-release', url: 'u' };
+  const generated: HostCommit = {
+    rev: 'aaaaaaa1',
+    message:
+      'chore: release v1.1.0\n\n---pls-release---\nversion: 1.1.0\nfrom: 1.0.0\ntype: minor\n---pls-release---',
+    parents: ['c0'],
+  };
+
+  await t.step('names the discarded commit in a comment on the PR', async () => {
+    const f = fixture(['c1'], { c1: [commit('add export command')] }, pr, [
+      generated,
+      { rev: 'bbbbbbb2cccc', message: 'docs: reword changelog', parents: ['aaaaaaa1'] },
+    ]);
+
+    await prepWorkflow(f.repo, f.host, options);
+
+    assertEquals(f.branchUpdates, ['release-on-c1']);
+    assertEquals(f.comments.length, 1);
+    assertEquals(f.comments[0].includes('`bbbbbbb` docs: reword changelog'), true);
+  });
+
+  await t.step('says nothing when the branch holds only what pls generated', async () => {
+    const f = fixture(['c1'], { c1: [commit('add export command')] }, pr, [generated]);
+
+    await prepWorkflow(f.repo, f.host, options);
+
+    assertEquals(f.comments, []);
   });
 });

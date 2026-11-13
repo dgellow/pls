@@ -12,7 +12,7 @@ import type {
   UpdatePROptions,
 } from '../domain/types.ts';
 import { hasReleaseMetadata, parseReleaseMetadata } from '../domain/release-metadata.ts';
-import type { CodeHost } from '../domain/vcs.ts';
+import type { CodeHost, HostCommit } from '../domain/vcs.ts';
 import { PlsError } from '../lib/error.ts';
 
 export interface GitHubClientOptions {
@@ -530,6 +530,37 @@ export class GitHub implements CodeHost {
         body: JSON.stringify(options),
       },
     );
+  }
+
+  async commentOnPR(number: number, body: string): Promise<void> {
+    // Pull request comments are issue comments in GitHub's API.
+    await this.request(
+      `/repos/${this.owner}/${this.repo}/issues/${number}/comments`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ body }),
+      },
+    );
+  }
+
+  async getCommitsAhead(base: string, head: string): Promise<HostCommit[]> {
+    const comparison = await this.requestSafe<{
+      commits: Array<{
+        sha: string;
+        commit: { message: string };
+        parents: Array<{ sha: string }>;
+      }>;
+    }>(
+      `/repos/${this.owner}/${this.repo}/compare/${encodeURIComponent(base)}...${
+        encodeURIComponent(head)
+      }`,
+    );
+
+    return (comparison?.commits ?? []).map((c) => ({
+      rev: c.sha,
+      message: c.commit.message,
+      parents: c.parents.map((p) => p.sha),
+    }));
   }
 
   // --- GitHub Releases ---
