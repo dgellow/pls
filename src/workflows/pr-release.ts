@@ -54,34 +54,55 @@ export async function releaseWorkflow(
   host: CodeHost,
   options: ReleaseOptions = {},
 ): Promise<ReleaseResult> {
-  // 1. Check if HEAD is a release commit
+  // 1. The version to release is what the tree says: .pls/versions.json at HEAD.
   const headRev = await repo.getHeadRevision();
-  const headMessage = await repo.getCommitMessage('HEAD');
-  const metadata = parseReleaseMetadata(headMessage);
+  const versionsContent = await repo.readFile('.pls/versions.json');
+  if (!versionsContent) {
+    return { ...DEFAULT_RESULT };
+  }
 
-  let version: string;
+  const versions: VersionsManifest = JSON.parse(versionsContent);
+  const version = versions['.']?.version;
+  if (!version) {
+    return { ...DEFAULT_RESULT };
+  }
+
+  // The commit that set this version is the release commit.
+  const versionRev = await findVersionCommit(repo, version);
+
+  // 2. A ---pls-release--- block in HEAD's message says where the release came
+  // from and what kind it is. Commit messages are not reviewed the way files
+  // are (a squash merge copies a contributor's text into main), so the block is
+  // used only when the tree backs it: it names the version in versions.json,
+  // and HEAD is the commit that set that version.
+  const headMessage = await repo.getCommitMessage('HEAD');
+  const claimed = parseReleaseMetadata(headMessage);
+  let metadata: typeof claimed = null;
+
+  if (claimed) {
+    if (claimed.version !== version) {
+      console.warn(
+        `⚠️  HEAD's commit message has a ---pls-release--- block for ${claimed.version}, ` +
+          `but .pls/versions.json says ${version}. Ignoring the block: ` +
+          `pls releases what .pls/versions.json says.`,
+      );
+    } else if (versionRev !== null && versionRev !== headRev) {
+      console.warn(
+        `⚠️  HEAD's commit message has a ---pls-release--- block for ${claimed.version}, ` +
+          `but ${versionRev.slice(0, 7)} is the commit that set that version. Ignoring the block.`,
+      );
+    } else {
+      metadata = claimed;
+    }
+  }
+
   let fromVersion: string;
   let bumpType: 'major' | 'minor' | 'patch' | 'transition';
 
   if (metadata) {
-    // HEAD is a release commit - use its metadata
-    version = metadata.version;
     fromVersion = metadata.from;
     bumpType = metadata.type;
   } else {
-    // Not a release commit - read from versions.json
-    const versionsContent = await repo.readFile('.pls/versions.json');
-    if (!versionsContent) {
-      return { ...DEFAULT_RESULT };
-    }
-
-    const versions: VersionsManifest = JSON.parse(versionsContent);
-    version = versions['.']?.version;
-
-    if (!version) {
-      return { ...DEFAULT_RESULT };
-    }
-
     // Try to determine from/type from tag history
     fromVersion = await findPreviousVersion(host, version);
     bumpType = 'patch'; // Default, actual type unknown
@@ -89,7 +110,7 @@ export async function releaseWorkflow(
 
   const tag = `v${version}`;
 
-  // 2. Check if tag already exists
+  // 3. Check if tag already exists
   const existingTag = await host.getTag(tag);
   if (existingTag?.isPlsRelease) {
     // Tag exists — but GitHub Release might be missing. Try to create/find it.
@@ -132,19 +153,10 @@ export async function releaseWorkflow(
     };
   }
 
-  // 3. Find the release commit revision
-  let releaseRev: string;
+  // 4. The release commit: where the version was set, or HEAD if history cannot tell.
+  const releaseRev = versionRev ?? headRev;
 
-  if (metadata) {
-    // HEAD is the release commit
-    releaseRev = headRev;
-  } else {
-    // Search for commit that set this version
-    const foundRev = await repo.findCommitByContent(version, '.pls/versions.json');
-    releaseRev = foundRev || headRev;
-  }
-
-  // 4. Generate tag message - get commits since previous release
+  // 5. Generate tag message - get commits since previous release
   const fromTag = `v${fromVersion}`;
   const fromTagInfo = await host.getTag(fromTag);
   const fromRev = fromTagInfo?.rev || null;
@@ -157,7 +169,7 @@ export async function releaseWorkflow(
     `## Changes\n${commitList}`,
   );
 
-  // 5. Create tag
+  // 6. Create tag
   const recovered = existingTag !== null && !existingTag.isPlsRelease;
 
   try {
@@ -185,7 +197,7 @@ export async function releaseWorkflow(
     throw error;
   }
 
-  // 6. Create GitHub Release
+  // 7. Create GitHub Release
   const isPrerelease = semver.getStage(version) !== 'stable';
   const releaseUrl = await ensureRelease(
     host,
@@ -195,7 +207,7 @@ export async function releaseWorkflow(
     isPrerelease,
   );
 
-  // 7. Sync branches for Strategy B (next → main)
+  // 8. Sync branches for Strategy B (next → main)
   let branchSynced = false;
   let branchSyncError: string | null = null;
 
@@ -215,6 +227,17 @@ export async function releaseWorkflow(
     branchSynced,
     branchSyncError,
   };
+}
+
+/**
+ * The commit that set `version` in .pls/versions.json, or null if history
+ * does not show one.
+ *
+ * Searches for the quoted value: `"1.1.0"` does not match `"1.1.0-beta.0"`,
+ * so the step from a prerelease to its stable version is found too.
+ */
+async function findVersionCommit(repo: LocalRepo, version: string): Promise<string | null> {
+  return await repo.findCommitByContent(`"${version}"`, '.pls/versions.json');
 }
 
 /**
