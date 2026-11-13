@@ -180,7 +180,9 @@ export class GitHub implements CodeHost {
       `/repos/${this.owner}/${this.repo}/git/commits/${parentRev}`,
     );
 
-    // 2. Create blobs for each file
+    // 2. Create blobs for each file. A file that exists keeps its mode: an
+    // executable script must stay executable.
+    const modes = await this.fileModes(parentCommit.tree.sha, [...files.keys()]);
     const treeItems: Array<{
       path: string;
       mode: string;
@@ -202,7 +204,7 @@ export class GitHub implements CodeHost {
 
       treeItems.push({
         path,
-        mode: '100644',
+        mode: modes.get(path) === '100755' ? '100755' : '100644',
         type: 'blob',
         sha: blob.sha,
       });
@@ -234,6 +236,45 @@ export class GitHub implements CodeHost {
     );
 
     return commitResult.sha;
+  }
+
+  /**
+   * File modes of `paths` in a tree. Paths that do not exist are left out.
+   *
+   * One recursive listing answers this for most repositories. GitHub
+   * truncates that listing for very large trees; the paths it did not
+   * return are then looked up directory by directory.
+   */
+  private async fileModes(treeSha: string, paths: string[]): Promise<Map<string, string>> {
+    type Entry = { path: string; mode: string; type: string; sha: string };
+    type Tree = { tree: Entry[]; truncated: boolean };
+    const modes = new Map<string, string>();
+    if (paths.length === 0) return modes;
+
+    const wanted = new Set(paths);
+    const listing = await this.request<Tree>(
+      `/repos/${this.owner}/${this.repo}/git/trees/${treeSha}?recursive=1`,
+    );
+    for (const entry of listing.tree) {
+      if (wanted.has(entry.path)) modes.set(entry.path, entry.mode);
+    }
+    if (!listing.truncated) return modes;
+
+    for (const path of paths) {
+      if (modes.has(path)) continue;
+      const parts = path.split('/');
+      let sha: string | null = treeSha;
+      for (let depth = 0; depth < parts.length && sha; depth++) {
+        const level: Tree | null = await this.requestSafe<Tree>(
+          `/repos/${this.owner}/${this.repo}/git/trees/${sha}`,
+        );
+        const entry: Entry | undefined = level?.tree.find((e) => e.path === parts[depth]);
+        if (!entry) break;
+        if (depth === parts.length - 1) modes.set(path, entry.mode);
+        sha = entry.type === 'tree' ? entry.sha : null;
+      }
+    }
+    return modes;
   }
 
   // --- Branch Operations ---
