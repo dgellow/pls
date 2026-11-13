@@ -17,6 +17,7 @@
 
 import type { CallRecord, GitHubSim } from '../github/server.ts';
 import type { Permission, Repo, SimEvent, Token } from '../github/model.ts';
+import { runShell, type ShellResult } from './shell.ts';
 
 export type Trigger =
   | { event: 'push'; branches?: string[]; tags?: string[] }
@@ -84,8 +85,6 @@ export interface Suppressed {
   action?: string;
   reason: string;
 }
-
-const decoder = new TextDecoder();
 
 function globMatch(pattern: string, value: string): boolean {
   const re = new RegExp(
@@ -277,41 +276,8 @@ export class Runner {
     script: string,
     env: Record<string, string>,
     timeoutMs: number,
-  ): Promise<
-    { code: number | null; stdout: string; stderr: string; timedOut: boolean; ms: number }
-  > {
-    const started = performance.now();
-    // `timeout` kills the whole process group, so a hung tool cannot outlive the step.
-    const seconds = Math.max(1, Math.ceil(timeoutMs / 1000));
-    const out = await new Deno.Command('timeout', {
-      args: [
-        '-s',
-        'KILL',
-        String(seconds),
-        'bash',
-        '--noprofile',
-        '--norc',
-        '-eo',
-        'pipefail',
-        '-c',
-        script,
-      ],
-      cwd,
-      env,
-      clearEnv: true,
-      stdin: 'null',
-      stdout: 'piped',
-      stderr: 'piped',
-    }).output();
-    const ms = Math.round(performance.now() - started);
-    const timedOut = out.code === 137 && ms >= timeoutMs - 500;
-    return {
-      code: timedOut ? null : out.code,
-      stdout: decoder.decode(out.stdout),
-      stderr: decoder.decode(out.stderr),
-      timedOut,
-      ms,
-    };
+  ): Promise<ShellResult> {
+    return await runShell(script, { cwd, env, timeoutMs });
   }
 
   private async ensureMergeRef(prNumber: number): Promise<string | null> {
