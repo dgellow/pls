@@ -6,7 +6,7 @@
 
 import type { CodeHost, LocalRepo } from '../domain/vcs.ts';
 import type { FileChanges, PullRequest, VersionBump, VersionsManifest } from '../domain/types.ts';
-import { calculateBump } from '../domain/bump.ts';
+import { calculateBump, classifyStep, nextVersions } from '../domain/bump.ts';
 import { filterReleasableCommits } from '../domain/commits.ts';
 import { generateChangelog, generateReleaseNotes } from '../domain/changelog.ts';
 import { buildReleaseFiles, createInitialVersionsManifest } from '../domain/files.ts';
@@ -70,19 +70,34 @@ export async function prepWorkflow(
     return { pr: null, bump: null, dryRun };
   }
 
-  // 5. Check for existing PR and preserve user's selection
+  // 5. Check for existing PR and preserve a version a person chose there.
+  // The PR body is text anyone with access can edit, so the choice is kept
+  // only if it is a version pls would propose itself.
   const existingPR = await host.findPR(releaseBranch);
-  let selectedVersion = bump.to;
+  let chosenVersion: string | null = null;
 
   if (existingPR) {
     const userOverride = getUserOverride(existingPR.body);
-    if (userOverride) {
-      selectedVersion = userOverride;
+    if (userOverride && userOverride !== bump.to) {
+      if (nextVersions(currentVersion).includes(userOverride)) {
+        chosenVersion = userOverride;
+      } else {
+        console.warn(
+          `⚠️  The release PR selects ${userOverride}, which is not one release step ` +
+            `from ${currentVersion}. Ignoring it and proposing ${bump.to}.`,
+        );
+      }
     }
   }
 
+  const selectedVersion = chosenVersion ?? bump.to;
+
   // 6. Build release files
-  const effectiveBump: VersionBump = { ...bump, to: selectedVersion };
+  const effectiveBump: VersionBump = {
+    ...bump,
+    to: selectedVersion,
+    type: chosenVersion ? releaseTypeOf(bump, chosenVersion) : bump.type,
+  };
   const changelogEntry = generateReleaseNotes(effectiveBump); // For CHANGELOG.md (with version header)
   const changelog = generateChangelog(effectiveBump); // For PR body (body only)
 
@@ -102,7 +117,7 @@ export async function prepWorkflow(
   const { files, commitMessage } = buildReleaseFiles({
     version: selectedVersion,
     from: bump.from,
-    type: bump.type,
+    type: chosenVersion ? classifyStep(bump.from, chosenVersion) : bump.type,
     manifests,
     versionsJson: versionsContent,
     versionFile,
@@ -111,7 +126,7 @@ export async function prepWorkflow(
   });
 
   // 7. Generate PR body
-  const prBody = generatePRBody(effectiveBump, changelog);
+  const prBody = generatePRBody(bump, changelog, chosenVersion);
   const prTitle = `chore: release v${selectedVersion}`;
 
   if (dryRun) {
@@ -156,6 +171,15 @@ export async function prepWorkflow(
   }
 
   return { pr, bump: effectiveBump, dryRun: false };
+}
+
+/**
+ * The bump type to report for a chosen version. A prerelease keeps the
+ * calculated type (VersionBump has no "transition").
+ */
+function releaseTypeOf(bump: VersionBump, chosenVersion: string): VersionBump['type'] {
+  const step = classifyStep(bump.from, chosenVersion);
+  return step === 'transition' ? bump.type : step;
 }
 
 /**

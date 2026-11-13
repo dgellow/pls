@@ -64,6 +64,8 @@ export interface VersionOption {
 export interface VersionSelection {
   options: VersionOption[];
   selected: VersionOption | null;
+  /** True when a person picked the selected version (it was not calculated). */
+  chosen: boolean;
 }
 
 /** Files to be committed */

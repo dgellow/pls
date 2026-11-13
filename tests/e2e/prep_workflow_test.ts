@@ -7,7 +7,7 @@
  * version from the previous PR.
  */
 
-import { assertEquals } from '@std/assert';
+import { assertEquals, assertStringIncludes } from '@std/assert';
 import { createTestRepo, run } from './test_helpers.ts';
 import { prepWorkflow } from '../../src/workflows/pr-create.ts';
 import { initWorkflow } from '../../src/workflows/init.ts';
@@ -282,6 +282,59 @@ Deno.test('e2e: prep workflow — respects explicit user version selection', asy
 
       const pr2 = getPR();
       assertEquals(pr2!.title, 'chore: release v1.1.0-alpha.0');
+    });
+
+    await t.step('the choice survives a later push, with no box ticked', async () => {
+      // prep rewrote the body: the chosen version is now the current one,
+      // marked as chosen, and no checkbox is ticked.
+      assertEquals(getPR()!.body.includes('[x]'), false);
+      assertStringIncludes(getPR()!.body, '<!-- pls:v:1.1.0-alpha.0:transition:current:chosen -->');
+
+      await git.writeFile('src/fix.ts', 'export const fixed = true;\n');
+      await git.commit('fix: handle empty input');
+
+      const result = await prepWorkflow(git, host, {
+        baseBranch: 'main',
+        releaseBranch: 'pls-release',
+        dryRun: false,
+      });
+
+      assertEquals(result.bump?.to, '1.1.0-alpha.0');
+      assertEquals(result.bump?.commits.length, 2);
+      // The calculated version is offered as the way back.
+      assertStringIncludes(getPR()!.body, '- [ ] 1.1.0 (minor)');
+    });
+
+    await t.step('a version pls would not propose is ignored and recalculated', async () => {
+      const pr = getPR()!;
+      pr.body = pr.body.replace(
+        '<!-- pls:options:end -->',
+        '- [x] 9.9.9-evil.1 (custom) <!-- pls:v:9.9.9-evil.1:major -->\n<!-- pls:options:end -->',
+      );
+
+      const result = await prepWorkflow(git, host, {
+        baseBranch: 'main',
+        releaseBranch: 'pls-release',
+        dryRun: false,
+      });
+
+      assertEquals(result.bump?.to, '1.1.0');
+      assertEquals(getPR()!.body.includes('9.9.9'), false);
+    });
+
+    await t.step('choosing a major records a major release', async () => {
+      const pr = getPR()!;
+      assertStringIncludes(pr.body, '- [ ] 2.0.0 (major)');
+      pr.body = pr.body.replace('- [ ] 2.0.0 (major)', '- [x] 2.0.0 (major)');
+
+      const result = await prepWorkflow(git, host, {
+        baseBranch: 'main',
+        releaseBranch: 'pls-release',
+        dryRun: false,
+      });
+
+      assertEquals(result.bump?.to, '2.0.0');
+      assertEquals(result.bump?.type, 'major');
     });
   } finally {
     await cleanup();
