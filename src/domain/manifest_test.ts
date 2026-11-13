@@ -145,12 +145,59 @@ Deno.test('updateJsonVersion', async (t) => {
     assertEquals(parsed.name, 'test');
   });
 
-  await t.step('preserves formatting with trailing newline', () => {
-    const content = '{\n  "name": "test",\n  "version": "1.0.0"\n}';
-    const result = updateJsonVersion(content, '2.0.0');
+  await t.step('changes only the version value, byte for byte', () => {
+    const cases: Array<[string, string]> = [
+      // no trailing newline
+      [
+        '{\n  "name": "test",\n  "version": "1.0.0"\n}',
+        '{\n  "name": "test",\n  "version": "2.0.0"\n}',
+      ],
+      // four-space indentation, inline array and object, key order
+      [
+        '{\n    "name": "widget",\n    "version": "1.0.0",\n    "files": ["dist", "src"],\n' +
+        '    "scripts": { "test": "node test.js" }\n}\n',
+        '{\n    "name": "widget",\n    "version": "2.0.0",\n    "files": ["dist", "src"],\n' +
+        '    "scripts": { "test": "node test.js" }\n}\n',
+      ],
+      // CRLF line endings
+      [
+        '{\r\n  "version": "1.0.0",\r\n  "name": "w"\r\n}\r\n',
+        '{\r\n  "version": "2.0.0",\r\n  "name": "w"\r\n}\r\n',
+      ],
+      // tabs, no space after the colon
+      ['{\n\t"version":"1.0.0"\n}\n', '{\n\t"version":"2.0.0"\n}\n'],
+      // one line
+      ['{"name":"w","version":"1.0.0"}', '{"name":"w","version":"2.0.0"}'],
+      // comments and a trailing comma, as deno.json allows
+      [
+        '{\n  // the package\n  "name": "w", /* v */ "version": "1.0.0",\n}\n',
+        '{\n  // the package\n  "name": "w", /* v */ "version": "2.0.0",\n}\n',
+      ],
+      // byte order mark
+      ['\uFEFF{"version": "1.0.0"}\n', '\uFEFF{"version": "2.0.0"}\n'],
+    ];
 
-    assertEquals(result.includes('"version": "2.0.0"'), true);
-    assertEquals(result.endsWith('\n'), true);
+    for (const [content, expected] of cases) {
+      assertEquals(updateJsonVersion(content, '2.0.0'), expected);
+    }
+  });
+
+  await t.step('updates the top-level field, not a nested or quoted "version"', () => {
+    const content = '{\n  "engines": { "version": "9.9.9" },\n' +
+      '  "description": "set \\"version\\": \\"0.0.0\\" here",\n' +
+      '  "tools": [{ "version": "8.8.8" }],\n  "version": "1.0.0"\n}\n';
+
+    assertEquals(
+      updateJsonVersion(content, '2.0.0'),
+      content.replace('"version": "1.0.0"\n}', '"version": "2.0.0"\n}'),
+    );
+  });
+
+  await t.step('escapes the new value as JSON', () => {
+    assertEquals(
+      updateJsonVersion('{"version": "1.0.0"}', '2.0.0-"x"'),
+      '{"version": "2.0.0-\\"x\\""}',
+    );
   });
 
   await t.step('adds version field when missing', () => {

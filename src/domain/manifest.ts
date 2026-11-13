@@ -83,8 +83,21 @@ export function updateManifestVersion(_path: string, content: string, version: s
 
 /**
  * Update version in a JSON manifest (deno.json, package.json).
+ *
+ * Only the value of the top-level "version" field is replaced, in place.
+ * Indentation, key order, line endings, comments (deno.json may have them)
+ * and the end of the file stay byte for byte as they were: a release must
+ * not reformat a file the project formats its own way.
+ *
+ * A manifest without a "version" field gets one added, which re-serializes
+ * the file. Content that is not JSON is returned unchanged.
  */
 export function updateJsonVersion(content: string, version: string): string {
+  const span = findTopLevelValue(content, 'version');
+  if (span && content[span.start] === '"') {
+    return content.slice(0, span.start) + JSON.stringify(version) + content.slice(span.end);
+  }
+
   try {
     const json = JSON.parse(content);
     json.version = version;
@@ -93,6 +106,114 @@ export function updateJsonVersion(content: string, version: string): string {
     // If parsing fails, return original
     return content;
   }
+}
+
+/**
+ * Find the value of a top-level key in JSON text.
+ *
+ * Returns the half-open span of the value token, or null if the text is not
+ * an object or has no such key. This walks the text token by token (strings
+ * with escapes, nested objects and arrays, comments), so a "version" inside a
+ * nested object or inside a string is never mistaken for the field.
+ */
+function findTopLevelValue(text: string, key: string): { start: number; end: number } | null {
+  let i = 0;
+
+  const skipSpace = (): void => {
+    while (i < text.length) {
+      const ch = text[i];
+      if (ch === ' ' || ch === '\t' || ch === '\n' || ch === '\r' || ch === '\uFEFF') {
+        i++;
+      } else if (ch === '/' && text[i + 1] === '/') {
+        while (i < text.length && text[i] !== '\n') i++;
+      } else if (ch === '/' && text[i + 1] === '*') {
+        const close = text.indexOf('*/', i + 2);
+        i = close === -1 ? text.length : close + 2;
+      } else {
+        return;
+      }
+    }
+  };
+
+  // Advance past a string literal starting at i. Returns false if it never closes.
+  const skipString = (): boolean => {
+    i++; // opening quote
+    while (i < text.length) {
+      if (text[i] === '\\') {
+        i += 2;
+      } else if (text[i] === '"') {
+        i++;
+        return true;
+      } else {
+        i++;
+      }
+    }
+    return false;
+  };
+
+  // Advance past any value starting at i.
+  const skipValue = (): boolean => {
+    if (text[i] === '"') return skipString();
+
+    if (text[i] === '{' || text[i] === '[') {
+      let depth = 0;
+      while (i < text.length) {
+        skipSpace();
+        const ch = text[i];
+        if (ch === '"') {
+          if (!skipString()) return false;
+        } else if (ch === '{' || ch === '[') {
+          depth++;
+          i++;
+        } else if (ch === '}' || ch === ']') {
+          depth--;
+          i++;
+          if (depth === 0) return true;
+        } else {
+          i++;
+        }
+      }
+      return false;
+    }
+
+    // number, true, false, null
+    const start = i;
+    while (i < text.length && !',}] \t\r\n/'.includes(text[i])) i++;
+    return i > start;
+  };
+
+  skipSpace();
+  if (text[i] !== '{') return null;
+  i++;
+
+  while (i < text.length) {
+    skipSpace();
+    if (text[i] === '}') return null;
+    if (text[i] !== '"') return null;
+
+    const nameStart = i;
+    if (!skipString()) return null;
+    let name: unknown;
+    try {
+      name = JSON.parse(text.slice(nameStart, i));
+    } catch {
+      return null;
+    }
+
+    skipSpace();
+    if (text[i] !== ':') return null;
+    i++;
+    skipSpace();
+
+    const start = i;
+    if (!skipValue()) return null;
+    if (name === key) return { start, end: i };
+
+    skipSpace();
+    if (text[i] === ',') i++;
+  }
+
+  return null;
 }
 
 /**
