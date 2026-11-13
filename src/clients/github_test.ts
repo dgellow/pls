@@ -149,3 +149,84 @@ Deno.test('GitHub.readFile', async (t) => {
     );
   });
 });
+
+Deno.test('GitHub.commit keeps the mode of files that exist', async (t) => {
+  /** Serve the routes commit() uses; record the tree it creates. */
+  function api(trees: Record<string, unknown>): {
+    handler: Handler;
+    created: () => Array<{ path: string; mode: string }>;
+  } {
+    let created: Array<{ path: string; mode: string }> = [];
+    const handler: Handler = async (req, url) => {
+      const path = url.pathname.replace('/repos/acme/widget', '');
+      if (req.method === 'GET' && path === '/git/commits/parent') {
+        return Response.json({ tree: { sha: 'root' } });
+      }
+      if (req.method === 'GET' && path.startsWith('/git/trees/')) {
+        const key = path.slice('/git/trees/'.length) + url.search;
+        return key in trees
+          ? Response.json(trees[key])
+          : Response.json({ message: 'Not Found' }, { status: 404 });
+      }
+      if (req.method === 'POST' && path === '/git/blobs') return Response.json({ sha: 'blob' });
+      if (req.method === 'POST' && path === '/git/trees') {
+        created = (await req.json()).tree;
+        return Response.json({ sha: 'newtree' });
+      }
+      if (req.method === 'POST' && path === '/git/commits') return Response.json({ sha: 'new' });
+      return Response.json({ message: 'Not Found' }, { status: 404 });
+    };
+    return { handler, created: () => created };
+  }
+
+  const files = new Map([
+    ['bin/widget', '#!/bin/sh\n'],
+    ['package.json', '{}\n'],
+    ['CHANGELOG.md', '# Changelog\n'],
+  ]);
+  const expected = [
+    { path: 'bin/widget', mode: '100755' },
+    { path: 'package.json', mode: '100644' },
+    { path: 'CHANGELOG.md', mode: '100644' }, // new file
+  ];
+  const modesOf = (tree: Array<{ path: string; mode: string }>) =>
+    tree.map((e) => ({ path: e.path, mode: e.mode }));
+
+  await t.step('from the recursive listing', async () => {
+    const { handler, created } = api({
+      'root?recursive=1': {
+        truncated: false,
+        tree: [
+          { path: 'bin', mode: '040000', type: 'tree', sha: 'bin' },
+          { path: 'bin/widget', mode: '100755', type: 'blob', sha: 'w' },
+          { path: 'package.json', mode: '100644', type: 'blob', sha: 'p' },
+        ],
+      },
+    });
+    await withApi(handler, async (github) => {
+      assertEquals(await github.commit(files, 'chore: release', 'parent'), 'new');
+      assertEquals(modesOf(created()), expected);
+    });
+  });
+
+  await t.step('directory by directory when the listing is truncated', async () => {
+    const { handler, created } = api({
+      'root?recursive=1': { truncated: true, tree: [] },
+      'root': {
+        truncated: false,
+        tree: [
+          { path: 'bin', mode: '040000', type: 'tree', sha: 'bintree' },
+          { path: 'package.json', mode: '100644', type: 'blob', sha: 'p' },
+        ],
+      },
+      'bintree': {
+        truncated: false,
+        tree: [{ path: 'widget', mode: '100755', type: 'blob', sha: 'w' }],
+      },
+    });
+    await withApi(handler, async (github) => {
+      await github.commit(files, 'chore: release', 'parent');
+      assertEquals(modesOf(created()), expected);
+    });
+  });
+});
