@@ -23,6 +23,28 @@ export interface GitHubClientOptions {
   apiUrl?: string;
 }
 
+/**
+ * Decode base64 file content as UTF-8 text.
+ *
+ * `atob` alone returns one character per byte, which turns every non-ASCII
+ * character into mojibake that is then written back to the repository.
+ */
+function decodeBase64Text(encoded: string, path: string): string {
+  const binary = atob(encoded.replace(/\s/g, ''));
+  const bytes = Uint8Array.from(binary, (ch) => ch.charCodeAt(0));
+  try {
+    // ignoreBOM keeps a byte order mark in the text, so it is written back unchanged.
+    return new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes);
+  } catch {
+    throw new PlsError(
+      `"${path}" is not valid UTF-8 text, so pls cannot update it without damaging it. ` +
+        `Convert the file to UTF-8, or stop tracking it with pls.`,
+      'FILE_NOT_UTF8',
+      { path },
+    );
+  }
+}
+
 export class GitHub implements CodeHost {
   private owner: string;
   private repo: string;
@@ -100,14 +122,45 @@ export class GitHub implements CodeHost {
 
   async readFile(path: string, ref?: string): Promise<string | null> {
     const query = ref ? `?ref=${ref}` : '';
-    const result = await this.requestSafe<{ content: string }>(
+    const result = await this.requestSafe<
+      { type?: string; content?: string; encoding?: string; sha: string; size: number }
+    >(
       `/repos/${this.owner}/${this.repo}/contents/${path}${query}`,
     );
 
     if (!result) return null;
 
-    // Decode base64 content
-    return atob(result.content.replace(/\n/g, ''));
+    if (result.type !== 'file') {
+      throw new PlsError(
+        `Expected a file at "${path}"${ref ? ` on ${ref}` : ''}, found ` +
+          `${Array.isArray(result) ? 'a directory' : `a ${result.type}`}. ` +
+          `Point pls at a regular file.`,
+        'GITHUB_NOT_A_FILE',
+        { path, ref },
+      );
+    }
+
+    let encoded = result.content ?? '';
+
+    // The contents API carries no content for files above 1 MB: `content` is
+    // empty and `encoding` is "none". The blob API serves files up to 100 MB.
+    // Treating the empty content as the file would drop everything in it.
+    if (result.encoding !== 'base64' || (encoded === '' && result.size > 0)) {
+      const blob = await this.request<{ content: string; encoding: string }>(
+        `/repos/${this.owner}/${this.repo}/git/blobs/${result.sha}`,
+      );
+      if (blob.encoding !== 'base64') {
+        throw new PlsError(
+          `GitHub returned "${path}" with encoding "${blob.encoding}"; expected base64. ` +
+            `This is unexpected: please report it with the file size (${result.size} bytes).`,
+          'GITHUB_UNEXPECTED_ENCODING',
+          { path, ref, encoding: blob.encoding, size: result.size },
+        );
+      }
+      encoded = blob.content;
+    }
+
+    return decodeBase64Text(encoded, path);
   }
 
   async fileExists(path: string, ref?: string): Promise<boolean> {
