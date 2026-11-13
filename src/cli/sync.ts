@@ -84,7 +84,7 @@ export async function sync(args: string[]): Promise<void> {
 
   // Create GitHub client
   const token = parsed.token || Deno.env.get('GITHUB_TOKEN') || '';
-  const github = new GitHub({ owner, repo, token });
+  const github = new GitHub({ owner, repo, token, apiUrl: Deno.env.get('GITHUB_API_URL') });
 
   // Execute workflow
   const result = await syncWorkflow(github, {

@@ -19,18 +19,21 @@ export interface GitHubClientOptions {
   owner: string;
   repo: string;
   token: string;
+  /** REST API base URL. Defaults to github.com's API; set for GitHub Enterprise Server. */
+  apiUrl?: string;
 }
 
 export class GitHub implements CodeHost {
   private owner: string;
   private repo: string;
   private token: string;
-  private baseUrl = 'https://api.github.com';
+  private baseUrl: string;
 
   constructor(options: GitHubClientOptions) {
     this.owner = options.owner;
     this.repo = options.repo;
     this.token = options.token;
+    this.baseUrl = (options.apiUrl || 'https://api.github.com').replace(/\/+$/, '');
 
     if (!this.token) {
       throw new PlsError(
