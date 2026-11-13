@@ -22,6 +22,7 @@ import type {
   User,
 } from '../github/model.ts';
 import { type Run, Runner } from '../actions/runner.ts';
+import { runShell } from '../actions/shell.ts';
 import type { Change, Tool, WorkflowOptions } from '../tools/tool.ts';
 
 /** A scenario expectation that did not hold. */
@@ -40,8 +41,6 @@ export interface WorldOptions {
   /** Version the project is at, already released, when the scenario starts. */
   initialVersion?: string;
 }
-
-const decoder = new TextDecoder();
 
 export class World {
   sim!: GitHubSim;
@@ -133,8 +132,7 @@ export class World {
     script: string,
     opts: { cwd?: string; env?: Record<string, string>; timeoutMs?: number } = {},
   ): Promise<{ code: number; stdout: string; stderr: string }> {
-    const child = new Deno.Command('bash', {
-      args: ['--noprofile', '--norc', '-eo', 'pipefail', '-c', script],
+    const r = await runShell(script, {
       cwd: opts.cwd ?? this.dev,
       env: {
         PATH: Deno.env.get('PATH') ?? '',
@@ -149,25 +147,10 @@ export class World {
         ...this.runner?.baseEnv,
         ...opts.env,
       },
-      clearEnv: true,
-      stdin: 'null',
-      stdout: 'piped',
-      stderr: 'piped',
-    }).spawn();
-    const timer = setTimeout(() => {
-      try {
-        child.kill('SIGKILL');
-      } catch {
-        // already exited
-      }
-    }, opts.timeoutMs ?? 120_000);
-    const out = await child.output();
-    clearTimeout(timer);
-    return {
-      code: out.code,
-      stdout: decoder.decode(out.stdout),
-      stderr: decoder.decode(out.stderr),
-    };
+      timeoutMs: opts.timeoutMs ?? 120_000,
+    });
+    // A command killed at the limit reports 137, as it did before.
+    return { code: r.code ?? 137, stdout: r.stdout, stderr: r.stderr };
   }
 
   /** Run a script in the maintainer's clone; throw if it fails. */

@@ -13,8 +13,8 @@ deno test -A sim/                               # tests of the simulator itself
 deno run -A sim/spec/conformance.ts             # check the simulated API against GitHub's OpenAPI description
 ```
 
-Requirements: `git` (with `git http-backend`), `deno`, `node` and `npm` for the Node-based tools,
-`jq` and `curl` for workflow steps. Tools are installed into `sim/.cache/` on first use.
+Requirements: `git` (with `git http-backend`), `deno`, `bash`, `node` and `npm` for the Node-based
+tools, `jq` and `curl` for workflow steps. Tools are installed into `sim/.cache/` on first use.
 
 ## Report
 
