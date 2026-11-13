@@ -2,6 +2,9 @@
  * Turn sim/out/results.json into a Markdown report.
  *
  *   deno run -A sim/report.ts [--in sim/out/results.json] [--out sim/out/report.md]
+ *
+ * --in can be given several times: the results are merged in that order. CI
+ * runs each tool in its own job and builds one report from the four results.
  */
 
 import { parseArgs } from '@std/cli/parse-args';
@@ -93,11 +96,23 @@ export function render(data: ResultsFile): string {
   return lines.join('\n');
 }
 
+/** Combine results of separate runs (one per tool, say) into one. */
+export function merge(files: ResultsFile[]): ResultsFile {
+  return {
+    generatedAt: files.map((f) => f.generatedAt).sort().at(-1) ?? new Date().toISOString(),
+    versions: Object.assign({}, ...files.map((f) => f.versions)),
+    results: files.flatMap((f) => f.results),
+  };
+}
+
 if (import.meta.main) {
-  const args = parseArgs(Deno.args, { string: ['in', 'out'] });
-  const input = args.in ?? `${repoRoot}/sim/out/results.json`;
+  const args = parseArgs(Deno.args, { string: ['in', 'out'], collect: ['in'] });
+  const inputs = args.in.length > 0 ? args.in : [`${repoRoot}/sim/out/results.json`];
   const output = args.out ?? `${repoRoot}/sim/out/report.md`;
-  const data = JSON.parse(await Deno.readTextFile(input)) as ResultsFile;
-  await Deno.writeTextFile(output, render(data) + '\n');
+  const files: ResultsFile[] = [];
+  for (const input of inputs) {
+    files.push(JSON.parse(await Deno.readTextFile(input)) as ResultsFile);
+  }
+  await Deno.writeTextFile(output, render(merge(files)) + '\n');
   console.log(`Report written to ${output}`);
 }

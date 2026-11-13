@@ -1,0 +1,125 @@
+name: Simulation
+
+# Runs every release scenario in sim/ against pls (built from this commit),
+# release-please, changesets and semantic-release, one job per tool, and
+# publishes one report on the run's summary page and as an artifact. The report
+# is not committed: the latest run on main is the current state.
+
+permissions:
+  contents: read
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'sim/**'
+      - 'deno.json'
+      - 'deno.lock'
+      - '.github/workflows/sim.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'sim/**'
+      - 'deno.json'
+      - 'deno.lock'
+      - '.github/workflows/sim.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: simulation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scenarios:
+    name: ${{ matrix.tool }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      # One tool breaking must not hide the results of the others.
+      fail-fast: false
+      matrix:
+        tool: [pls, release-please, changesets, semantic-release]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.6.x
+          cache: true
+
+      # The other tools are Node programs. 22 is the version their verdicts were established on.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # Tool installation (npm packages, action checkout).
+      - uses: actions/cache@v4
+        with:
+          path: sim/.cache
+          key: sim-${{ matrix.tool }}-${{ runner.os }}-${{ hashFiles('sim/tools/*.ts') }}
+
+      - name: Run every scenario against ${{ matrix.tool }}
+        run: deno run -A sim/run.ts --tool ${{ matrix.tool }}
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() && hashFiles('sim/out/results.json') != '' }}
+        with:
+          name: simulation-${{ matrix.tool }}
+          path: |
+            sim/out/results.json
+            sim/out/logs/
+
+      # A failing scenario is a finding about a tool and does not fail this job.
+      # "gap" and "error" mean the simulator itself is incomplete or broke.
+      - name: Check for simulator problems
+        run: |
+          problems=$(jq '[.results[] | select(.verdict == "gap" or .verdict == "error")] | length' sim/out/results.json)
+          if [ "$problems" -gt 0 ]; then
+            jq -r '.results[] | select(.verdict == "gap" or .verdict == "error") | "::error::\(.tool) \(.scenario): \(.verdict): \(.detail | split("\n")[0])"' sim/out/results.json
+            exit 1
+          fi
+
+  report:
+    name: Report
+    needs: scenarios
+    # Build the report from whatever results exist, also when a tool's job failed.
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.6.x
+          cache: true
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: simulation-*
+          path: results
+
+      - name: Build the report
+        run: |
+          inputs=()
+          for tool in pls release-please changesets semantic-release; do
+            file="results/simulation-$tool/results.json"
+            if [ -f "$file" ]; then
+              inputs+=(--in "$file")
+            else
+              echo "::warning::No results for $tool: its job did not finish. The report leaves it out."
+            fi
+          done
+          if [ "${#inputs[@]}" -eq 0 ]; then
+            echo "::error::No tool produced results, so there is no report to build."
+            exit 1
+          fi
+          deno run -A sim/report.ts "${inputs[@]}" --out report.md
+          cat report.md >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: simulation-report
+          path: report.md
