@@ -56,6 +56,13 @@ export interface RemoteDetectable {
   getRemoteInfo(): Promise<{ owner: string; repo: string } | null>;
 }
 
+/** A commit as the code host reports it. */
+export interface HostCommit {
+  rev: RevisionId;
+  message: string;
+  parents: RevisionId[];
+}
+
 /** Code hosting platform (GitHub, GitLab, etc.). */
 export interface CodeHost {
   readFile(path: string, ref?: string): Promise<string | null>;
@@ -73,6 +80,12 @@ export interface CodeHost {
   getPR(number: number): Promise<PullRequest>;
   createPR(options: CreatePROptions): Promise<PullRequest>;
   updatePR(number: number, options: UpdatePROptions): Promise<void>;
+  /**
+   * Commits reachable from `head` and not from `base`, oldest first.
+   * Empty if either does not exist.
+   */
+  getCommitsAhead(base: string, head: string): Promise<HostCommit[]>;
+  commentOnPR(number: number, body: string): Promise<void>;
   createRelease(tag: string, name: string, body: string, prerelease?: boolean): Promise<string>;
   releaseExists(tag: string): Promise<boolean>;
   getReleaseUrl(tag: string): Promise<string | null>;

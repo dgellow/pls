@@ -17,6 +17,7 @@ import {
 import { detectManifest, readUpdatableManifests } from '../domain/manifest.ts';
 import { generateBootstrapPRBody, generatePRBody, getUserOverride } from '../domain/pr-body.ts';
 import { PlsError } from '../lib/error.ts';
+import { findForeignCommits, reportDiscardedCommits } from './release-branch.ts';
 
 export interface PrepResult {
   pr: PullRequest | null;
@@ -202,6 +203,9 @@ async function prepareOnce(
     return 'base-moved';
   }
 
+  // Commits someone pushed to the release branch are about to be replaced.
+  const discarded = existingPR ? await findForeignCommits(host, baseBranch, releaseBranch) : [];
+
   await host.ensureBranch(releaseBranch, commitRev);
 
   // 9. Create or update PR
@@ -212,6 +216,7 @@ async function prepareOnce(
       title: prTitle,
       body: prBody,
     });
+    await reportDiscardedCommits(host, existingPR.number, baseBranch, discarded);
     pr = { ...existingPR, title: prTitle, body: prBody };
   } else {
     pr = await host.createPR({

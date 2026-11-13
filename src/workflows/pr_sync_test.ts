@@ -7,7 +7,7 @@ import { generateReleaseNotes } from '../domain/changelog.ts';
 import { buildReleaseFiles } from '../domain/files.ts';
 import { generatePRBody } from '../domain/pr-body.ts';
 import type { Commit, FileChanges, PullRequest, VersionBump } from '../domain/types.ts';
-import type { CodeHost } from '../domain/vcs.ts';
+import type { CodeHost, HostCommit } from '../domain/vcs.ts';
 import { PlsError } from '../lib/error.ts';
 import { determineBumpType, syncWorkflow } from './pr-sync.ts';
 
@@ -54,6 +54,9 @@ function releasePRFixture(): {
   pr: PullRequest;
   branchFile: (path: string) => string | undefined;
   commits: Array<{ files: FileChanges; message: string }>;
+  /** Commits the release branch has that the base branch does not. */
+  ahead: HostCommit[];
+  comments: string[];
 } {
   const commit: Commit = {
     rev: 'abc123',
@@ -93,6 +96,10 @@ function releasePRFixture(): {
 
   const commits: Array<{ files: FileChanges; message: string }> = [];
   const pending = new Map<string, Map<string, string>>();
+  const ahead: HostCommit[] = [
+    { rev: 'aaaaaaa1', message: prepared.commitMessage, parents: ['main-rev'] },
+  ];
+  const comments: string[] = [];
 
   const host = {
     readFile: (path: string, ref?: string) =>
@@ -114,9 +121,14 @@ function releasePRFixture(): {
       if (options.body) pr.body = options.body;
       return Promise.resolve();
     },
+    getCommitsAhead: () => Promise.resolve(ahead),
+    commentOnPR: (_number: number, body: string) => {
+      comments.push(body);
+      return Promise.resolve();
+    },
   } as unknown as CodeHost;
 
-  return { host, pr, branchFile: (path) => branch.get(path), commits };
+  return { host, pr, branchFile: (path) => branch.get(path), commits, ahead, comments };
 }
 
 Deno.test('syncWorkflow', async (t) => {
@@ -161,6 +173,53 @@ Deno.test('syncWorkflow', async (t) => {
 
     assertEquals(again.synced, false);
     assertEquals(commits.length, 1);
+  });
+
+  await t.step('says on the PR which commits it discarded from the release branch', async () => {
+    const { host, pr, ahead, comments } = releasePRFixture();
+    ahead.push(
+      {
+        rev: 'bbbbbbb2cccc',
+        message: 'docs: reword changelog\n\nLonger text.',
+        parents: ['aaaaaaa1'],
+      },
+      {
+        rev: 'ccccccc3dddd',
+        message: "Merge branch 'main' into pls-release",
+        parents: ['bbbbbbb2cccc', 'main-rev'],
+      },
+    );
+    pr.body = pr.body.replace('- [ ] 2.0.0 ', '- [x] 2.0.0 ');
+
+    await syncWorkflow(host, { prNumber: 7, baseBranch: 'main' });
+
+    assertEquals(comments.length, 1);
+    assertStringIncludes(comments[0], 'discarded a commit');
+    assertStringIncludes(comments[0], '`bbbbbbb` docs: reword changelog');
+    // Neither the generated commit nor a merge of the base branch is reported.
+    assertEquals(comments[0].includes('aaaaaaa'), false);
+    assertEquals(comments[0].includes('Merge branch'), false);
+    assertStringIncludes(comments[0], 'land it on `main`');
+  });
+
+  await t.step('posts no comment when the branch holds only the generated commit', async () => {
+    const { host, pr, comments } = releasePRFixture();
+    pr.body = pr.body.replace('- [ ] 2.0.0 ', '- [x] 2.0.0 ');
+
+    await syncWorkflow(host, { prNumber: 7, baseBranch: 'main' });
+
+    assertEquals(comments, []);
+  });
+
+  await t.step('a comment that cannot be posted does not fail the sync', async () => {
+    const { host, pr, ahead } = releasePRFixture();
+    ahead.push({ rev: 'bbbbbbb2cccc', message: 'docs: reword changelog', parents: ['aaaaaaa1'] });
+    host.commentOnPR = () => Promise.reject(new PlsError('403 Forbidden', 'GITHUB_API_ERROR'));
+    pr.body = pr.body.replace('- [ ] 2.0.0 ', '- [x] 2.0.0 ');
+
+    const result = await syncWorkflow(host, { prNumber: 7, baseBranch: 'main' });
+
+    assertEquals(result.synced, true);
   });
 
   await t.step('refuses a version that is not one release step away', async () => {
