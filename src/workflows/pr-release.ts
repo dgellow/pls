@@ -14,6 +14,7 @@ import { parseReleaseMetadata } from '../domain/release-metadata.ts';
 import { generateReleaseTagMessage } from '../domain/release-metadata.ts';
 import { generateCommitList } from '../domain/changelog.ts';
 import { filterReleasableCommits } from '../domain/commits.ts';
+import { PlsError } from '../lib/error.ts';
 import * as semver from '../lib/semver.ts';
 
 export interface ReleaseResult {
@@ -217,8 +218,10 @@ export async function releaseWorkflow(
 }
 
 /**
- * Attempt to create a GitHub Release, falling back to fetching an existing one.
- * Returns the release URL or null (best effort).
+ * Make sure a GitHub Release exists for the tag and return its URL.
+ *
+ * Throws when the release neither exists nor can be created: a run that
+ * leaves a tag without its release must not report success.
  */
 async function ensureRelease(
   host: CodeHost,
@@ -226,16 +229,26 @@ async function ensureRelease(
   name: string,
   body: string,
   prerelease: boolean,
-): Promise<string | null> {
+): Promise<string> {
+  const existing = await host.getReleaseUrl(tag);
+  if (existing) return existing;
+
   try {
     return await host.createRelease(tag, name, body, prerelease);
-  } catch {
-    // Release might already exist — try to fetch it
-    try {
-      return await host.getReleaseUrl(tag);
-    } catch {
-      return null;
-    }
+  } catch (error) {
+    // It may exist after all: another run created it, or the response to our
+    // own request was lost on the way back.
+    const url = await host.getReleaseUrl(tag).catch(() => null);
+    if (url) return url;
+
+    const reason = error instanceof Error ? error.message : String(error);
+    throw new PlsError(
+      `Tag ${tag} exists, but its GitHub Release could not be created.\n${reason}\n\n` +
+        `Check that the token can create releases (permission "contents: write"), ` +
+        `then run "pls release" again: it creates the missing release for an existing tag.`,
+      'RELEASE_CREATE_FAILED',
+      { tag, cause: error instanceof PlsError ? error.details : reason },
+    );
   }
 }
 

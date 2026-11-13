@@ -2,7 +2,7 @@
  * Tests for PR release workflow.
  */
 
-import { assertEquals } from '@std/assert';
+import { assertEquals, assertRejects, assertStringIncludes } from '@std/assert';
 import type { CodeHost, LocalRepo } from '../domain/vcs.ts';
 import type { Commit, ReleaseTag } from '../domain/types.ts';
 import { PlsError } from '../lib/error.ts';
@@ -57,6 +57,27 @@ function createMockHost(overrides: Partial<CodeHost> = {}): CodeHost {
   } as CodeHost;
 }
 
+/** Overrides for a repository whose HEAD is the release commit that set `version`. */
+function atReleaseCommit(
+  version: string,
+  from: string,
+  type: 'major' | 'minor' | 'patch' = 'minor',
+): Partial<LocalRepo> {
+  return {
+    getHeadRevision: () => Promise.resolve('head-rev'),
+    readFile: (path) =>
+      Promise.resolve(
+        path === '.pls/versions.json' ? JSON.stringify({ '.': { version } }, null, 2) + '\n' : null,
+      ),
+    findCommitByContent: () => Promise.resolve('head-rev'),
+    getCommitMessage: () =>
+      Promise.resolve(
+        `chore: release v${version}\n\n---pls-release---\nversion: ${version}\n` +
+          `from: ${from}\ntype: ${type}\n---pls-release---`,
+      ),
+  };
+}
+
 function makeCommit(type: string, description: string): Commit {
   return {
     rev: 'abc123',
@@ -75,15 +96,7 @@ Deno.test('releaseWorkflow', async (t) => {
     let capturedSinceRev: string | null = 'not-called';
 
     const repo = createMockRepo({
-      getHeadRevision: () => Promise.resolve('head-rev'),
-      getCommitMessage: () =>
-        Promise.resolve(`chore: release v1.1.0
-
----pls-release---
-version: 1.1.0
-from: 1.0.0
-type: minor
----pls-release---`),
+      ...atReleaseCommit('1.1.0', '1.0.0'),
       getCommitsSince: (rev) => {
         capturedSinceRev = rev;
         return Promise.resolve([makeCommit('feat', 'new feature')]);
@@ -122,15 +135,7 @@ type: minor
     let capturedSinceRev: string | null = 'not-called';
 
     const repo = createMockRepo({
-      getHeadRevision: () => Promise.resolve('head-rev'),
-      getCommitMessage: () =>
-        Promise.resolve(`chore: release v1.0.0
-
----pls-release---
-version: 1.0.0
-from: 0.0.0
-type: minor
----pls-release---`),
+      ...atReleaseCommit('1.0.0', '0.0.0'),
       getCommitsSince: (rev) => {
         capturedSinceRev = rev;
         return Promise.resolve([makeCommit('feat', 'initial feature')]);
@@ -153,15 +158,7 @@ type: minor
     let createReleaseCalled = false;
 
     const repo = createMockRepo({
-      getHeadRevision: () => Promise.resolve('head-rev'),
-      getCommitMessage: () =>
-        Promise.resolve(`chore: release v1.1.0
-
----pls-release---
-version: 1.1.0
-from: 1.0.0
-type: minor
----pls-release---`),
+      ...atReleaseCommit('1.1.0', '1.0.0'),
       getCommitsSince: () => Promise.resolve([makeCommit('feat', 'new feature')]),
     });
 
@@ -203,15 +200,7 @@ type: minor
 
   await t.step('returns existing release URL when both tag and release exist', async () => {
     const repo = createMockRepo({
-      getHeadRevision: () => Promise.resolve('head-rev'),
-      getCommitMessage: () =>
-        Promise.resolve(`chore: release v1.1.0
-
----pls-release---
-version: 1.1.0
-from: 1.0.0
-type: minor
----pls-release---`),
+      ...atReleaseCommit('1.1.0', '1.0.0'),
       getCommitsSince: () => Promise.resolve([makeCommit('feat', 'feature')]),
     });
 
@@ -241,17 +230,9 @@ type: minor
     assertEquals(result.url, 'https://github.com/test/releases/v1.1.0');
   });
 
-  await t.step('returns null URL when both createRelease and getReleaseUrl fail', async () => {
+  await t.step('fails when the release neither exists nor can be created', async () => {
     const repo = createMockRepo({
-      getHeadRevision: () => Promise.resolve('head-rev'),
-      getCommitMessage: () =>
-        Promise.resolve(`chore: release v1.1.0
-
----pls-release---
-version: 1.1.0
-from: 1.0.0
-type: minor
----pls-release---`),
+      ...atReleaseCommit('1.1.0', '1.0.0'),
       getCommitsSince: () => Promise.resolve([]),
     });
 
@@ -270,32 +251,81 @@ type: minor
         return Promise.resolve(null);
       },
       createRelease: () => {
-        throw new Error('network error');
+        throw new PlsError(
+          'GitHub API error: 403 Forbidden\n{"message":"Resource not accessible by integration"}',
+          'GITHUB_API_ERROR',
+          { status: 403 },
+        );
       },
-      getReleaseUrl: () => {
-        throw new Error('network error');
+      getReleaseUrl: () => Promise.resolve(null),
+    });
+
+    const error = await assertRejects(() => releaseWorkflow(repo, host), PlsError);
+    assertEquals(error.code, 'RELEASE_CREATE_FAILED');
+    assertStringIncludes(error.message, 'v1.1.0');
+    assertStringIncludes(error.message, '403');
+    assertStringIncludes(error.message, 'contents: write');
+  });
+
+  await t.step('finds the release when the response to creating it was lost', async () => {
+    let created = false;
+    const repo = createMockRepo({
+      ...atReleaseCommit('1.1.0', '1.0.0'),
+      getCommitsSince: () => Promise.resolve([makeCommit('feat', 'new feature')]),
+    });
+
+    const host = createMockHost({
+      createRelease: () => {
+        created = true; // GitHub applied the request, the answer never arrived
+        throw new TypeError('connection closed before message completed');
       },
+      getReleaseUrl: () =>
+        Promise.resolve(created ? 'https://github.com/test/releases/v1.1.0' : null),
     });
 
     const result = await releaseWorkflow(repo, host);
 
-    assertEquals(result.alreadyExists, true);
-    assertEquals(result.url, null);
+    assertEquals(result.released, true);
+    assertEquals(result.url, 'https://github.com/test/releases/v1.1.0');
+  });
+
+  await t.step('does not try to create a release that exists', async () => {
+    let createReleaseCalled = false;
+    const repo = createMockRepo({
+      ...atReleaseCommit('1.1.0', '1.0.0'),
+    });
+
+    const host = createMockHost({
+      getTag: (name) =>
+        Promise.resolve(
+          name === 'v1.1.0'
+            ? {
+              name: 'v1.1.0',
+              rev: 'tag-rev',
+              message: null,
+              isPlsRelease: true,
+              metadata: { version: '1.1.0', from: '1.0.0', type: 'minor' as const },
+            }
+            : null,
+        ),
+      createRelease: () => {
+        createReleaseCalled = true;
+        return Promise.resolve('unexpected');
+      },
+      getReleaseUrl: () => Promise.resolve('https://github.com/test/releases/v1.1.0'),
+    });
+
+    const result = await releaseWorkflow(repo, host);
+
+    assertEquals(result.url, 'https://github.com/test/releases/v1.1.0');
+    assertEquals(createReleaseCalled, false);
   });
 
   await t.step('creates release after concurrent tag creation', async () => {
     let createReleaseCalled = false;
 
     const repo = createMockRepo({
-      getHeadRevision: () => Promise.resolve('head-rev'),
-      getCommitMessage: () =>
-        Promise.resolve(`chore: release v1.1.0
-
----pls-release---
-version: 1.1.0
-from: 1.0.0
-type: minor
----pls-release---`),
+      ...atReleaseCommit('1.1.0', '1.0.0'),
       getCommitsSince: () => Promise.resolve([makeCommit('feat', 'new feature')]),
     });
 
