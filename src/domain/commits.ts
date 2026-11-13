@@ -12,6 +12,12 @@ import type { Commit } from './types.ts';
 // Conventional commit pattern: type(scope)!: description
 const COMMIT_REGEX = /^(\w+)(?:\(([^)]+)\))?(!)?: (.+)$/;
 
+// A breaking-change footer (Conventional Commits 1.0.0): the uppercase token
+// at the start of a line, then a colon, a space and the description.
+// BREAKING-CHANGE is a synonym of BREAKING CHANGE. The words inside a sentence
+// are prose and declare nothing.
+const BREAKING_FOOTER_REGEX = /^BREAKING[ -]CHANGE: \S/m;
+
 /**
  * Parse a single commit message into structured format.
  */
@@ -40,9 +46,8 @@ export function parseCommitMessage(
   const [, type, scope, bang, description] = match;
   const body = lines.slice(1).join('\n').trim() || null;
 
-  // Breaking change indicated by ! or BREAKING CHANGE in body
-  const breaking = bang === '!' ||
-    (body?.includes('BREAKING CHANGE') ?? false);
+  // Breaking change indicated by ! or by a BREAKING CHANGE footer
+  const breaking = bang === '!' || (body !== null && BREAKING_FOOTER_REGEX.test(body));
 
   return {
     rev,

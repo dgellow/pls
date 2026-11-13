@@ -72,6 +72,39 @@ Deno.test('parseCommitMessage', async (t) => {
     );
     assertEquals(result?.breaking, true);
   });
+
+  await t.step('detects a BREAKING-CHANGE footer (the hyphenated synonym)', () => {
+    const commit = parseCommitMessage(
+      'abc123',
+      'fix: reject unknown flags\n\nBREAKING-CHANGE: unknown flags are now an error',
+    );
+
+    assertEquals(commit?.breaking, true);
+  });
+
+  await t.step('detects a breaking footer among other footers', () => {
+    const commit = parseCommitMessage(
+      'abc123',
+      'feat: new parser\n\nSome explanation.\n\nRefs: #12\nBREAKING CHANGE: old syntax is gone',
+    );
+
+    assertEquals(commit?.breaking, true);
+  });
+
+  await t.step('does not treat the words in prose as a breaking change', () => {
+    for (
+      const body of [
+        'This is not a BREAKING CHANGE, existing callers are unaffected.',
+        'No BREAKING CHANGE: callers are unaffected.',
+        'breaking change: lower case is not the token',
+        'BREAKING CHANGE without a colon',
+        'BREAKING CHANGE:',
+      ]
+    ) {
+      const commit = parseCommitMessage('abc123', `fix: handle empty input\n\n${body}`);
+      assertEquals(commit?.breaking, false, body);
+    }
+  });
 });
 
 Deno.test('parseGitLog', async (t) => {
