@@ -28,6 +28,8 @@ import type {
  */
 function createStatefulHost(
   initialFiles: Map<string, string>,
+  /** The commit the base branch points at: the test repository's HEAD, as after a push. */
+  baseTip: () => Promise<string>,
 ): {
   host: CodeHost;
   getPR: () => PullRequest | null;
@@ -50,7 +52,7 @@ function createStatefulHost(
       revCounter++;
       return Promise.resolve(`rev-${revCounter}`);
     },
-    getBranchRevision: () => Promise.resolve('base-rev'),
+    getBranchRevision: () => baseTip(),
     pointBranch: () => Promise.resolve(),
     createBranch: () => Promise.resolve(),
     branchExists: () => Promise.resolve(false),
@@ -117,7 +119,10 @@ Deno.test('e2e: prep workflow — version recalculation on re-run', async (t) =>
     initialFiles.set('.pls/versions.json', versionsJson!);
     initialFiles.set('deno.json', await git.readFile('deno.json') as string);
 
-    const { host, getPR, getCommittedFiles } = createStatefulHost(initialFiles);
+    const { host, getPR, getCommittedFiles } = createStatefulHost(
+      initialFiles,
+      () => git.getHeadRevision(),
+    );
 
     await t.step('first prep with feat! on pre-1.0 produces 0.4.0 minor', async () => {
       // Add breaking feature commit — but on pre-1.0, breaking bumps minor
@@ -192,7 +197,7 @@ Deno.test('e2e: prep workflow — unchanged commits preserve version', async (t)
     initialFiles.set('.pls/versions.json', versionsJson!);
     initialFiles.set('deno.json', await git.readFile('deno.json') as string);
 
-    const { host, getPR } = createStatefulHost(initialFiles);
+    const { host, getPR } = createStatefulHost(initialFiles, () => git.getHeadRevision());
 
     await t.step('first prep with feat → 1.1.0 minor', async () => {
       await git.writeFile('src/feature.ts', 'export function hello() {}\n');
@@ -245,7 +250,7 @@ Deno.test('e2e: prep workflow — respects explicit user version selection', asy
     initialFiles.set('.pls/versions.json', versionsJson!);
     initialFiles.set('deno.json', await git.readFile('deno.json') as string);
 
-    const { host, getPR } = createStatefulHost(initialFiles);
+    const { host, getPR } = createStatefulHost(initialFiles, () => git.getHeadRevision());
 
     await t.step('first prep → 1.1.0 minor', async () => {
       await git.writeFile('src/feature.ts', 'export function hello() {}\n');
@@ -360,7 +365,10 @@ Deno.test('e2e: prep workflow — type matches actual version transition', async
     initialFiles.set('.pls/versions.json', versionsJson!);
     initialFiles.set('deno.json', await git.readFile('deno.json') as string);
 
-    const { host, getCommittedFiles } = createStatefulHost(initialFiles);
+    const { host, getCommittedFiles } = createStatefulHost(
+      initialFiles,
+      () => git.getHeadRevision(),
+    );
 
     await t.step('feat! on 0.3.0 → type should be minor, version 0.4.0', async () => {
       await git.writeFile('src/app.ts', 'export class App {}\n');

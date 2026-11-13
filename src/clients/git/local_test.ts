@@ -233,6 +233,53 @@ Deno.test('LocalGit in a shallow clone', async (t) => {
   }
 });
 
+Deno.test('LocalGit getCommitsSince up to a given commit', async (t) => {
+  const { dir: origin, git: upstream, cleanup } = await createTestRepo();
+  const clone = await Deno.makeTempDir({ prefix: 'pls-test-clone-' });
+
+  try {
+    await upstream.writeFile('a.txt', 'a');
+    await upstream.commit('chore: release v1.0.0');
+    const releaseRev = await upstream.getHeadRevision();
+    await upstream.writeFile('b.txt', 'b');
+    await upstream.commit('feat: add export command');
+    const first = await upstream.getHeadRevision();
+
+    // Clone now, then the upstream branch moves on.
+    await run(clone, ['git', 'clone', '--quiet', `file://${origin}`, '.']);
+    await upstream.writeFile('c.txt', 'c');
+    await upstream.commit('fix: handle empty input');
+    const second = await upstream.getHeadRevision();
+    const local = new LocalGit(clone);
+
+    await t.step('stops at the given commit', async () => {
+      const commits = await upstream.getCommitsSince(releaseRev, first);
+      assertEquals(commits.map((c) => c.description), ['add export command']);
+    });
+
+    await t.step('fetches a commit the clone does not have yet', async () => {
+      assertEquals(await local.revExists(second), false);
+
+      const commits = await local.getCommitsSince(releaseRev, second);
+
+      assertEquals(commits.map((c) => c.description), ['handle empty input', 'add export command']);
+    });
+
+    await t.step('fails with instructions when that commit cannot be fetched', async () => {
+      const error = await assertRejects(
+        () => local.getCommitsSince(releaseRev, 'abcdefabcdefabcdefabcdefabcdefabcdefabcd'),
+        PlsError,
+      );
+
+      assertEquals(error.code, 'GIT_REVISION_MISSING');
+      assertStringIncludes(error.message, 'git fetch origin');
+    });
+  } finally {
+    await Deno.remove(clone, { recursive: true });
+    await cleanup();
+  }
+});
+
 Deno.test('LocalGit getCommitsSince', async (t) => {
   const { git, cleanup } = await createTestRepo();
 

@@ -26,7 +26,12 @@ export interface LocalRepo {
   readFile(path: string): Promise<string | null>;
   fileExists(path: string): Promise<boolean>;
   writeFile(path: string, content: string): Promise<void>;
-  getCommitsSince(rev: RevisionId | null): Promise<Commit[]>;
+  /**
+   * Commits after `rev` (all commits if null), newest first, up to and
+   * including `until`. `until` defaults to the checked-out commit; a revision
+   * the repository does not have yet is fetched.
+   */
+  getCommitsSince(rev: RevisionId | null, until?: RevisionId): Promise<Commit[]>;
   getHeadRevision(): Promise<RevisionId>;
   getCommitMessage(ref: string): Promise<string>;
   tagExists(tag: string): Promise<boolean>;

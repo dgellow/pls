@@ -76,12 +76,27 @@ export class LocalGit implements LocalRepo, BranchSyncable, RemoteDetectable {
 
   // --- Git History ---
 
-  async getCommitsSince(rev: string | null): Promise<Commit[]> {
+  async getCommitsSince(rev: string | null, until?: string): Promise<Commit[]> {
     await this.ensureFullHistory();
 
     // A repository without commits has no history to list.
     const head = await this.execSafe(['rev-parse', '--verify', '--quiet', 'HEAD']);
     if (!head) return [];
+
+    // The caller may ask about a commit newer than the checkout: the branch
+    // moved after this clone was made. Fetch it rather than answer for HEAD.
+    if (until && !(await this.revExists(until))) {
+      const fetched = await this.execSafe(['fetch', '--quiet', 'origin', until]);
+      if (fetched === null || !(await this.revExists(until))) {
+        throw new PlsError(
+          `Commit ${until.slice(0, 7)} is on the remote but not in this clone, ` +
+            `and fetching it failed.\n` +
+            `Update the clone (git fetch origin) and run the command again.`,
+          'GIT_REVISION_MISSING',
+          { rev: until },
+        );
+      }
+    }
 
     if (rev && !(await this.revExists(rev))) {
       throw new PlsError(
@@ -94,7 +109,8 @@ export class LocalGit implements LocalRepo, BranchSyncable, RemoteDetectable {
       );
     }
 
-    const range = rev ? `${rev}..HEAD` : 'HEAD';
+    const tip = until ?? 'HEAD';
+    const range = rev ? `${rev}..${tip}` : tip;
     const format = '%H%n%P%n%B%n---commit---';
 
     const output = await this.exec(['log', range, `--format=${format}`]);
