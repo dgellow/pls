@@ -152,6 +152,52 @@ Deno.test('prependChangelog', async (t) => {
     assertEquals(result.includes('## [1.0.0]'), true);
   });
 
+  await t.step('keeps an introduction above the new entry', () => {
+    const existing = '# Changelog\n\nAll notable changes are documented here.\n\n' +
+      'The format follows Keep a Changelog.\n\n## 1.0.0\n\n- Initial release\n';
+
+    assertEquals(
+      prependChangelog(existing, '## 1.1.0\n\n- add export command'),
+      '# Changelog\n\nAll notable changes are documented here.\n\n' +
+        'The format follows Keep a Changelog.\n\n## 1.1.0\n\n- add export command\n\n' +
+        '## 1.0.0\n\n- Initial release\n',
+    );
+  });
+
+  await t.step('keeps a title that is not "# Changelog"', () => {
+    assertEquals(
+      prependChangelog('# Release notes\n\n## 1.0.0\n\n- First\n', '## 1.1.0\n\n- Second'),
+      '# Release notes\n\n## 1.1.0\n\n- Second\n\n## 1.0.0\n\n- First\n',
+    );
+  });
+
+  await t.step('adds a title to a file that starts with an entry', () => {
+    assertEquals(
+      prependChangelog('## 1.0.0\n\n- First\n', '## 1.1.0\n\n- Second'),
+      '# Changelog\n\n## 1.1.0\n\n- Second\n\n## 1.0.0\n\n- First\n',
+    );
+  });
+
+  await t.step('finds entries whatever their heading style', () => {
+    for (const heading of ['## [1.0.0] - 2024-01-01', '# v1.0.0', '### 1.0.0 (2024-01-01)']) {
+      const result = prependChangelog(
+        `# Changelog\n\nIntro.\n\n${heading}\n\n- First\n`,
+        '## 1.1.0',
+      );
+      assertEquals(result, `# Changelog\n\nIntro.\n\n## 1.1.0\n\n${heading}\n\n- First\n`, heading);
+    }
+  });
+
+  await t.step('adds the first entry below a title and introduction', () => {
+    assertEquals(
+      prependChangelog(
+        '# Changelog\n\nAll notable changes are documented here.\n',
+        '## 1.0.0\n\n- First',
+      ),
+      '# Changelog\n\nAll notable changes are documented here.\n\n## 1.0.0\n\n- First\n',
+    );
+  });
+
   await t.step('creates new changelog if none exists', () => {
     const result = prependChangelog(null, '## [1.0.0]\n- First');
 
