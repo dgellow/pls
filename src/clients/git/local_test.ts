@@ -4,9 +4,10 @@
  * These tests create real git repositories in temp directories.
  */
 
-import { assertEquals, assertRejects } from '@std/assert';
+import { assertEquals, assertRejects, assertStringIncludes } from '@std/assert';
 import { PlsError } from '../../lib/error.ts';
-import { createTestRepo } from '../../../tests/e2e/test_helpers.ts';
+import { createTestRepo, run } from '../../../tests/e2e/test_helpers.ts';
+import { LocalGit } from './local.ts';
 
 // --- File Operations ---
 
@@ -167,6 +168,94 @@ Deno.test('LocalGit revision operations', async (t) => {
       const exists = await git.revExists('0000000000000000000000000000000000000000');
       assertEquals(exists, false);
     });
+  } finally {
+    await cleanup();
+  }
+});
+
+// --- Shallow clones ---
+
+Deno.test('LocalGit in a shallow clone', async (t) => {
+  const { dir: origin, git: upstream, cleanup } = await createTestRepo();
+  const clones: string[] = [];
+
+  /** Clone `origin` the way actions/checkout does by default: one commit. */
+  const shallowClone = async (): Promise<string> => {
+    const dir = await Deno.makeTempDir({ prefix: 'pls-test-shallow-' });
+    clones.push(dir);
+    await run(dir, ['git', 'clone', '--quiet', '--depth', '1', `file://${origin}`, '.']);
+    return dir;
+  };
+
+  try {
+    await upstream.writeFile('.pls/versions.json', '{"version": "1.0.0"}');
+    await upstream.commit('chore: release v1.0.0');
+    const releaseRev = await upstream.getHeadRevision();
+    await upstream.writeFile('a.txt', 'a');
+    await upstream.commit('feat: add export command');
+    await upstream.writeFile('b.txt', 'b');
+    await upstream.commit('fix: handle empty input');
+
+    await t.step('getCommitsSince fetches the history instead of finding nothing', async () => {
+      const dir = await shallowClone();
+      assertEquals(await run(dir, ['git', 'rev-parse', '--is-shallow-repository']), 'true');
+
+      const commits = await new LocalGit(dir).getCommitsSince(releaseRev);
+
+      assertEquals(commits.map((c) => c.description), ['handle empty input', 'add export command']);
+      assertEquals(await run(dir, ['git', 'rev-parse', '--is-shallow-repository']), 'false');
+    });
+
+    await t.step('findCommitByContent finds the real commit, not the shallow root', async () => {
+      const dir = await shallowClone();
+
+      const rev = await new LocalGit(dir).findCommitByContent('"1.0.0"', '.pls/versions.json');
+
+      assertEquals(rev, releaseRev);
+    });
+
+    await t.step('fails with instructions when the history cannot be fetched', async () => {
+      const dir = await shallowClone();
+      await run(dir, ['git', 'remote', 'set-url', 'origin', `file://${origin}-gone`]);
+
+      const error = await assertRejects(
+        () => new LocalGit(dir).getCommitsSince(releaseRev),
+        PlsError,
+      );
+
+      assertEquals(error.code, 'GIT_SHALLOW_CLONE');
+      assertStringIncludes(error.message, 'fetch-depth: 0');
+      assertStringIncludes(error.message, 'git fetch --unshallow');
+    });
+  } finally {
+    for (const dir of clones) await Deno.remove(dir, { recursive: true });
+    await cleanup();
+  }
+});
+
+Deno.test('LocalGit getCommitsSince', async (t) => {
+  const { git, cleanup } = await createTestRepo();
+
+  try {
+    await t.step('a repository without commits has no commits', async () => {
+      assertEquals(await git.getCommitsSince(null), []);
+    });
+
+    await git.writeFile('file.txt', 'content');
+    await git.commit('feat: initial');
+
+    await t.step(
+      'a revision that is not in the history is an error, not "no changes"',
+      async () => {
+        const error = await assertRejects(
+          () => git.getCommitsSince('1234567890123456789012345678901234567890'),
+          PlsError,
+        );
+
+        assertEquals(error.code, 'GIT_REVISION_MISSING');
+        assertStringIncludes(error.message, '1234567');
+      },
+    );
   } finally {
     await cleanup();
   }
