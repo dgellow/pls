@@ -12,6 +12,9 @@ import { parseGitLogWithParents } from './parse.ts';
 import { PlsError } from '../../lib/error.ts';
 
 export class LocalGit implements LocalRepo, BranchSyncable, RemoteDetectable {
+  /** Set once the history is known to be complete (see ensureFullHistory). */
+  private fullHistory = false;
+
   constructor(private cwd: string = Deno.cwd()) {}
 
   /**
@@ -74,13 +77,68 @@ export class LocalGit implements LocalRepo, BranchSyncable, RemoteDetectable {
   // --- Git History ---
 
   async getCommitsSince(rev: string | null): Promise<Commit[]> {
+    await this.ensureFullHistory();
+
+    // A repository without commits has no history to list.
+    const head = await this.execSafe(['rev-parse', '--verify', '--quiet', 'HEAD']);
+    if (!head) return [];
+
+    if (rev && !(await this.revExists(rev))) {
+      throw new PlsError(
+        `Commit ${rev.slice(0, 7)} (the last release) is not in this repository's history, ` +
+          `so the changes since then cannot be listed.\n` +
+          `Check that the release tag points at a commit on this branch, ` +
+          `and that the clone has it: git fetch origin --tags`,
+        'GIT_REVISION_MISSING',
+        { rev },
+      );
+    }
+
     const range = rev ? `${rev}..HEAD` : 'HEAD';
     const format = '%H%n%P%n%B%n---commit---';
 
-    const output = await this.execSafe(['log', range, `--format=${format}`]);
+    const output = await this.exec(['log', range, `--format=${format}`]);
     if (!output) return [];
 
     return parseGitLogWithParents(output);
+  }
+
+  /**
+   * Make sure the whole history is present.
+   *
+   * A shallow clone (the default of actions/checkout) holds only the newest
+   * commits. Listing changes since the last release, or finding the commit
+   * that set a version, would then come back empty or wrong without any
+   * error. The missing history is fetched once; if that is not possible the
+   * run fails and says how to get a full clone.
+   */
+  private async ensureFullHistory(): Promise<void> {
+    if (this.fullHistory) return;
+
+    const shallow = await this.execSafe(['rev-parse', '--is-shallow-repository']);
+    if (shallow === 'true') {
+      console.warn(
+        '⚠️  Shallow clone: fetching the full history. ' +
+          'Set "fetch-depth: 0" on actions/checkout to avoid this extra fetch.',
+      );
+      try {
+        await this.exec(['fetch', '--quiet', '--unshallow', 'origin']);
+      } catch (error) {
+        const reason = error instanceof PlsError
+          ? String((error.details as { error?: string } | undefined)?.error ?? error.message).trim()
+          : String(error);
+        throw new PlsError(
+          `This is a shallow clone, and fetching the missing history failed:\n${reason}\n\n` +
+            `pls needs the commits since the last release.\n` +
+            `  In GitHub Actions: set "fetch-depth: 0" on actions/checkout\n` +
+            `  Locally: git fetch --unshallow`,
+          'GIT_SHALLOW_CLONE',
+          { reason },
+        );
+      }
+    }
+
+    this.fullHistory = true;
   }
 
   async getHeadRevision(): Promise<string> {
@@ -142,8 +200,8 @@ export class LocalGit implements LocalRepo, BranchSyncable, RemoteDetectable {
    * Check if a revision exists in the repository.
    */
   async revExists(rev: string): Promise<boolean> {
-    const result = await this.execSafe(['cat-file', '-t', rev]);
-    return result === 'commit';
+    const result = await this.execSafe(['cat-file', '-e', `${rev}^{commit}`]);
+    return result !== null;
   }
 
   /**
@@ -154,6 +212,8 @@ export class LocalGit implements LocalRepo, BranchSyncable, RemoteDetectable {
     searchString: string,
     filePath: string,
   ): Promise<string | null> {
+    await this.ensureFullHistory();
+
     const output = await this.execSafe([
       'log',
       '-S',
