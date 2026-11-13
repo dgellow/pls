@@ -9,7 +9,7 @@ import type { VersionBump, VersionsManifest } from '../domain/types.ts';
 import { calculateBump, calculateTransition } from '../domain/bump.ts';
 import { filterReleasableCommits } from '../domain/commits.ts';
 import { generateChangelog, generateReleaseNotes } from '../domain/changelog.ts';
-import { buildReleaseFiles } from '../domain/files.ts';
+import { buildReleaseFiles, requireVersionFile } from '../domain/files.ts';
 import { readUpdatableManifests } from '../domain/manifest.ts';
 import { generateReleaseTagMessage } from '../domain/release-metadata.ts';
 import { PlsError } from '../lib/error.ts';
@@ -92,14 +92,11 @@ export async function localReleaseWorkflow(
   const existingChangelog = await repo.readFile('CHANGELOG.md');
 
   // Get version file if configured
-  let versionFile: { path: string; content: string } | null = null;
   const versionFilePath = versions['.']?.versionFile;
-  if (versionFilePath) {
-    const content = await repo.readFile(versionFilePath);
-    if (content) {
-      versionFile = { path: versionFilePath, content };
-    }
-  }
+  const versionFile = requireVersionFile(
+    versionFilePath,
+    versionFilePath ? await repo.readFile(versionFilePath) : null,
+  );
 
   const { files, commitMessage } = buildReleaseFiles({
     version: bump.to,
@@ -199,14 +196,11 @@ export async function transitionWorkflow(
   const manifests = await readUpdatableManifests((p) => repo.readFile(p));
   const existingChangelog = await repo.readFile('CHANGELOG.md');
 
-  let versionFile: { path: string; content: string } | null = null;
   const versionFilePath = versions['.']?.versionFile;
-  if (versionFilePath) {
-    const content = await repo.readFile(versionFilePath);
-    if (content) {
-      versionFile = { path: versionFilePath, content };
-    }
-  }
+  const versionFile = requireVersionFile(
+    versionFilePath,
+    versionFilePath ? await repo.readFile(versionFilePath) : null,
+  );
 
   const { files, commitMessage } = buildReleaseFiles({
     version: to,
