@@ -34,6 +34,9 @@ concurrency:
 jobs:
   scenarios:
     name: ${{ matrix.tool }}
+    # pls's own release PR only changes the version and the changelog, and it is
+    # rebuilt on every push to main: the run on main already covers that code.
+    if: ${{ github.head_ref != 'pls-release' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
@@ -85,7 +88,7 @@ jobs:
     name: Report
     needs: scenarios
     # Build the report from whatever results exist, also when a tool's job failed.
-    if: ${{ !cancelled() }}
+    if: ${{ !cancelled() && needs.scenarios.result != 'skipped' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
