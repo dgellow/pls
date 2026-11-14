@@ -3,9 +3,9 @@
  * GitHub API for the routes each test needs.
  */
 
-import { assertEquals, assertRejects } from '@std/assert';
+import { assertEquals, assertRejects, assertThrows } from '@std/assert';
 import { PlsError } from '../lib/error.ts';
-import { GitHub } from './github.ts';
+import { GitHub, resolveApiUrl } from './github.ts';
 
 type Handler = (req: Request, url: URL) => Response | Promise<Response>;
 
@@ -280,5 +280,53 @@ Deno.test('GitHub requests have a time limit', async (t) => {
 
     assertEquals(error.code, 'GITHUB_NETWORK_ERROR');
     assertEquals(error.message.includes('Check your connection'), true);
+  });
+});
+
+Deno.test('GitHub client: the API URL and the repository names are checked up front', async (t) => {
+  const client = (apiUrl: string | undefined, owner = 'acme', repo = 'widget') =>
+    new GitHub({ owner, repo, token: 't', apiUrl });
+
+  await t.step('accepts github.com, a GitHub Enterprise Server URL and a local server', () => {
+    assertEquals(resolveApiUrl(undefined), 'https://api.github.com');
+    assertEquals(resolveApiUrl(''), 'https://api.github.com');
+    assertEquals(resolveApiUrl('https://api.github.com/'), 'https://api.github.com');
+    assertEquals(
+      resolveApiUrl('https://github.example.com/api/v3/'),
+      'https://github.example.com/api/v3',
+    );
+    assertEquals(resolveApiUrl('http://127.0.0.1:8080'), 'http://127.0.0.1:8080');
+    assertEquals(resolveApiUrl('http://localhost:8080/'), 'http://localhost:8080');
+  });
+
+  await t.step('refuses to send the token over plain http to another machine', () => {
+    const error = assertThrows(() => client('http://github.example.com/api/v3'), PlsError);
+    assertEquals(error.code, 'GITHUB_API_URL_INVALID');
+    assertEquals(error.message.includes('GITHUB_API_URL'), true);
+    assertEquals(error.message.includes('use https'), true);
+  });
+
+  await t.step('refuses what is not a usable base URL', () => {
+    for (
+      const bad of [
+        'not a url',
+        'ftp://github.example.com',
+        'https://user:secret@github.example.com',
+        'https://github.example.com/api/v3?x=1',
+        'https://github.example.com/api/v3#frag',
+        'http://127.0.0.1.example.com',
+      ]
+    ) {
+      const error = assertThrows(() => client(bad), PlsError, undefined, bad);
+      assertEquals(error.code, 'GITHUB_API_URL_INVALID', bad);
+    }
+  });
+
+  await t.step('refuses owner and repository names that are not names', () => {
+    for (const [owner, repo] of [['acme/evil', 'widget'], ['acme', '../other'], ['', 'widget']]) {
+      const error = assertThrows(() => client(undefined, owner, repo), PlsError);
+      assertEquals(error.code, 'INVALID_REPO_NAME');
+    }
+    client(undefined, 'Acme-Corp_1', 'my.widget-2');
   });
 });

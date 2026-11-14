@@ -51,6 +51,50 @@ function decodeBase64Text(encoded: string, path: string): string {
   }
 }
 
+const DEFAULT_API_URL = 'https://api.github.com';
+
+/** Owner and repository names as GitHub allows them. */
+const REPO_NAME_PART = /^[A-Za-z0-9_.-]+$/;
+
+/**
+ * Check the API base URL before any request is made. Every request carries the
+ * token, so the URL must be one the token may be sent to: https, or plain http
+ * on this machine (local test servers). Returns the URL without a trailing slash.
+ */
+export function resolveApiUrl(apiUrl: string | undefined): string {
+  if (!apiUrl) return DEFAULT_API_URL;
+
+  const invalid = (reason: string): PlsError =>
+    new PlsError(
+      `GitHub API URL "${apiUrl}" cannot be used: ${reason}.\n` +
+        `It comes from the GITHUB_API_URL environment variable. Unset it to use github.com, ` +
+        `or set it to your GitHub Enterprise Server API, for example https://github.example.com/api/v3`,
+      'GITHUB_API_URL_INVALID',
+      { apiUrl, reason },
+    );
+
+  let url: URL;
+  try {
+    url = new URL(apiUrl);
+  } catch {
+    throw invalid('it is not a URL');
+  }
+
+  const loopback = url.hostname === 'localhost' || url.hostname === '[::1]' ||
+    /^127(\.\d{1,3}){3}$/.test(url.hostname);
+  if (url.protocol !== 'https:' && !(url.protocol === 'http:' && loopback)) {
+    throw invalid('the token would be sent without encryption; use https');
+  }
+  if (url.username || url.password) {
+    throw invalid('it contains credentials; pass the token with GITHUB_TOKEN instead');
+  }
+  if (url.search || url.hash) {
+    throw invalid('it has a query string or a fragment');
+  }
+
+  return `${url.origin}${url.pathname}`.replace(/\/+$/, '');
+}
+
 export class GitHub implements CodeHost {
   private owner: string;
   private repo: string;
@@ -62,7 +106,19 @@ export class GitHub implements CodeHost {
     this.owner = options.owner;
     this.repo = options.repo;
     this.token = options.token;
-    this.baseUrl = (options.apiUrl || 'https://api.github.com').replace(/\/+$/, '');
+    this.baseUrl = resolveApiUrl(options.apiUrl);
+
+    // Owner and repository become part of every request path.
+    for (const [label, value] of [['owner', this.owner], ['repository', this.repo]]) {
+      if (!REPO_NAME_PART.test(value)) {
+        throw new PlsError(
+          `Invalid GitHub ${label} "${value}". ` +
+            `Use --owner and --repo with the names as they appear in the repository URL.`,
+          'INVALID_REPO_NAME',
+          { [label]: value },
+        );
+      }
+    }
     this.requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
 
     if (!this.token) {
@@ -80,7 +136,8 @@ export class GitHub implements CodeHost {
     path: string,
     options: RequestInit = {},
   ): Promise<T> {
-    const url = path.startsWith('http') ? path : `${this.baseUrl}${path}`;
+    // Always relative to the checked base URL: the token goes nowhere else.
+    const url = `${this.baseUrl}${path}`;
     const method = options.method ?? 'GET';
 
     // The time limit covers the whole exchange, body included: without one, a
