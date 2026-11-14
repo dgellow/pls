@@ -53,6 +53,35 @@ Deno.test('LocalGit file operations', async (t) => {
   }
 });
 
+Deno.test('LocalGit.open', async (t) => {
+  const { dir, git, cleanup } = await createTestRepo();
+  const outside = await Deno.makeTempDir({ prefix: 'pls-test-outside-' });
+
+  try {
+    await git.writeFile('.pls/versions.json', '{}');
+    await git.writeFile('packages/app/src/index.ts', 'export {};\n');
+    await git.commitAll('chore: init');
+
+    await t.step('from a subdirectory, works on the root of the repository', async () => {
+      const opened = await LocalGit.open(`${dir}/packages/app/src`);
+      assertEquals(await opened.readFile('.pls/versions.json'), '{}');
+      assertEquals(await opened.getHeadRevision(), await git.getHeadRevision());
+
+      await opened.writeFile('CHANGELOG.md', '# Changelog\n');
+      assertEquals(await git.readFile('CHANGELOG.md'), '# Changelog\n');
+    });
+
+    await t.step('outside a repository, says so', async () => {
+      const error = await assertRejects(() => LocalGit.open(outside), PlsError);
+      assertEquals(error.code, 'NOT_A_GIT_REPOSITORY');
+      assertStringIncludes(error.message, outside);
+    });
+  } finally {
+    await cleanup();
+    await Deno.remove(outside, { recursive: true });
+  }
+});
+
 // --- Commit Operations ---
 
 Deno.test('LocalGit commit operations', async (t) => {

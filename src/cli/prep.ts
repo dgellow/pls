@@ -50,7 +50,7 @@ export async function prep(args: string[]): Promise<void> {
   output.header('📦 pls prep');
 
   // Get repo info
-  const git = new LocalGit();
+  const git = await LocalGit.open();
   let owner = parsed.owner;
   let repo = parsed.repo;
 
