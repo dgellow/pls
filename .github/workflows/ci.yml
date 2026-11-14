@@ -57,9 +57,14 @@ jobs:
           deno-version: v2.9.x
           cache: true
 
+      # Node and npm as in publish.yml, so a version that cannot publish is
+      # found here and not on release day.
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
+
+      - name: Update npm
+        run: npm install -g npm@12 && npm --version
 
       # All five targets, cross-compiled on Linux exactly as publish.yml does.
       - name: Build npm packages
@@ -76,6 +81,13 @@ jobs:
           npm init -y
           npm install ${{ github.workspace }}/npm/pls ${{ github.workspace }}/npm/pls-linux-x64
           npx pls --version
+
+      # What `npm publish` would put into each tarball.
+      - name: Pack the npm packages
+        run: |
+          for dir in npm/*/; do
+            (cd "$dir" && npm pack --dry-run)
+          done
 
       - uses: actions/upload-artifact@v4
         with:

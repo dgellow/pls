@@ -234,7 +234,7 @@ const mainPkgJson = {
   homepage: 'https://github.com/dgellow/pls#readme',
   keywords: ['release', 'automation', 'semantic-versioning', 'conventional-commits', 'cli'],
   bin: {
-    pls: './pls.js',
+    pls: 'pls.js',
   },
   files: ['pls.js'],
   engines: {
