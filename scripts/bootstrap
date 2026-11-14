@@ -10,6 +10,7 @@ install_deno() {
     "Linux aarch64" | "Linux arm64") target="aarch64-unknown-linux-gnu" ;;
     "Darwin x86_64") target="x86_64-apple-darwin" ;;
     "Darwin arm64") target="aarch64-apple-darwin" ;;
+    MINGW*" x86_64" | MSYS*" x86_64" | CYGWIN*" x86_64") target="x86_64-pc-windows-msvc" ;;
     *)
       echo "No Deno build for $(uname -sm)."
       echo "Install Deno 2.9 manually: https://github.com/denoland/deno/releases"
@@ -24,20 +25,21 @@ install_deno() {
   asset="deno-$target.zip"
   url="https://github.com/denoland/deno/releases/latest/download"
   bin_dir="$HOME/.deno/bin"
-  tmp_dir="$(mktemp -d)"
+  # Removed when the script ends, also when a step below fails.
+  deno_tmp_dir="$(mktemp -d)"
+  trap 'rm -rf "$deno_tmp_dir"' EXIT
 
-  curl -fsSL -o "$tmp_dir/$asset" "$url/$asset"
-  curl -fsSL -o "$tmp_dir/$asset.sha256sum" "$url/$asset.sha256sum"
+  curl -fsSL -o "$deno_tmp_dir/$asset" "$url/$asset"
+  curl -fsSL -o "$deno_tmp_dir/$asset.sha256sum" "$url/$asset.sha256sum"
   if command -v sha256sum >/dev/null 2>&1; then
-    (cd "$tmp_dir" && sha256sum -c "$asset.sha256sum" >/dev/null)
+    (cd "$deno_tmp_dir" && sha256sum -c "$asset.sha256sum" >/dev/null)
   else
-    (cd "$tmp_dir" && shasum -a 256 -c "$asset.sha256sum" >/dev/null)
+    (cd "$deno_tmp_dir" && shasum -a 256 -c "$asset.sha256sum" >/dev/null)
   fi
 
   mkdir -p "$bin_dir"
-  unzip -q -o -d "$bin_dir" "$tmp_dir/$asset"
-  chmod +x "$bin_dir/deno"
-  rm -r "$tmp_dir"
+  unzip -q -o -d "$bin_dir" "$deno_tmp_dir/$asset"
+  chmod +x "$bin_dir"/deno*
 }
 
 if ! command -v deno >/dev/null 2>&1; then

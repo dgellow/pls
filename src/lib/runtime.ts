@@ -4,6 +4,9 @@
  * This is the only module in src/ (tests aside) that touches the runtime. It
  * is written against node: APIs, which Deno, Node and Bun all provide, so the
  * rest of pls does not depend on the runtime it runs on.
+ *
+ * One call is runtime-specific: on Deno, programs are started with
+ * Deno.Command (see runCommand).
  */
 
 import process from 'node:process';
@@ -62,15 +65,59 @@ export interface CommandResult {
   stderr: string;
 }
 
+export interface CommandOptions {
+  cwd?: string;
+}
+
 /**
  * Run a program and collect its output. No shell is involved: the arguments
  * are passed as given. Rejects when the program cannot be started (for
- * example when it is not installed); a non-zero exit code is not an error.
+ * example when it is not installed, or pls may not run it); a non-zero exit
+ * code is not an error.
+ *
+ * On Deno this uses Deno.Command. Deno's version of node:child_process needs
+ * unrestricted --allow-env, so with it a run that grants only the variables
+ * pls reads (--allow-env=GITHUB_TOKEN --allow-run=git) could not start git.
  */
 export function runCommand(
   program: string,
   commandArgs: string[],
-  options: { cwd?: string } = {},
+  options: CommandOptions = {},
+): Promise<CommandResult> {
+  const deno = (globalThis as { Deno?: typeof Deno }).Deno;
+  return deno
+    ? runCommandWithDeno(deno, program, commandArgs, options)
+    : runCommandWithNode(program, commandArgs, options);
+}
+
+async function runCommandWithDeno(
+  deno: typeof Deno,
+  program: string,
+  commandArgs: string[],
+  options: CommandOptions,
+): Promise<CommandResult> {
+  const { code, stdout, stderr } = await new deno.Command(program, {
+    args: commandArgs,
+    cwd: options.cwd,
+    stdin: 'null',
+    stdout: 'piped',
+    stderr: 'piped',
+  }).output();
+  return {
+    code,
+    stdout: new TextDecoder().decode(stdout),
+    stderr: new TextDecoder().decode(stderr),
+  };
+}
+
+/**
+ * runCommand for runtimes other than Deno. Exported so the tests can run it
+ * on Deno as well.
+ */
+export function runCommandWithNode(
+  program: string,
+  commandArgs: string[],
+  options: CommandOptions = {},
 ): Promise<CommandResult> {
   return new Promise((resolve, reject) => {
     const child = spawn(program, commandArgs, {

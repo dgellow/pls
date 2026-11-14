@@ -376,6 +376,22 @@ Deno.test('LocalGit error handling', async (t) => {
         'Git command failed',
       );
     });
+    await t.step('git that cannot be started is an error, not "nothing found"', async () => {
+      // Queries that answer null or false when git says no must not do so
+      // when git never ran: that would report an empty repository.
+      const missing = new LocalGit('/pls-no-such-directory');
+      for (
+        const query of [
+          () => missing.tagExists('v1.0.0'),
+          () => missing.getRemoteInfo(),
+          () => missing.getCommitsSince(null),
+        ]
+      ) {
+        const error = await assertRejects(query, PlsError);
+        assertEquals(error.code, 'GIT_NOT_STARTED');
+        assertStringIncludes(error.message, '/pls-no-such-directory');
+      }
+    });
   } finally {
     await cleanup();
   }

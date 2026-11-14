@@ -322,8 +322,32 @@ Deno.test('GitHub client: the API URL and the repository names are checked up fr
     }
   });
 
+  await t.step('does not echo credentials found in the URL', () => {
+    for (
+      const bad of [
+        'https://user:hunter2@github.example.com/api/v3',
+        'http://user:hunter2@github.example.com/api/v3',
+        'user:hunter2@github.example.com',
+      ]
+    ) {
+      const error = assertThrows(() => client(bad), PlsError);
+      assertEquals(error.code, 'GITHUB_API_URL_INVALID');
+      assertEquals(error.message.includes('hunter2'), false, error.message);
+      assertEquals(JSON.stringify(error.details).includes('hunter2'), false);
+      assertEquals(error.message.includes('github.example.com'), true);
+    }
+  });
+
   await t.step('refuses owner and repository names that are not names', () => {
-    for (const [owner, repo] of [['acme/evil', 'widget'], ['acme', '../other'], ['', 'widget']]) {
+    for (
+      const [owner, repo] of [
+        ['acme/evil', 'widget'],
+        ['acme', '../other'],
+        ['', 'widget'],
+        ['acme', '..'],
+        ['.', 'widget'],
+      ]
+    ) {
       const error = assertThrows(() => client(undefined, owner, repo), PlsError);
       assertEquals(error.code, 'INVALID_REPO_NAME');
     }

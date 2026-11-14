@@ -53,8 +53,8 @@ function decodeBase64Text(encoded: string, path: string): string {
 
 const DEFAULT_API_URL = 'https://api.github.com';
 
-/** Owner and repository names as GitHub allows them. */
-const REPO_NAME_PART = /^[A-Za-z0-9_.-]+$/;
+/** Owner and repository names as GitHub allows them. "." and ".." are path segments, not names. */
+const REPO_NAME_PART = /^(?!\.{1,2}$)[A-Za-z0-9_.-]+$/;
 
 /**
  * Check the API base URL before any request is made. Every request carries the
@@ -64,13 +64,15 @@ const REPO_NAME_PART = /^[A-Za-z0-9_.-]+$/;
 export function resolveApiUrl(apiUrl: string | undefined): string {
   if (!apiUrl) return DEFAULT_API_URL;
 
+  // The value is echoed in the error. Credentials in it must not be.
+  const shown = apiUrl.replace(/(^|\/\/)[^/@\s]*@/, '$1***@');
   const invalid = (reason: string): PlsError =>
     new PlsError(
-      `GitHub API URL "${apiUrl}" cannot be used: ${reason}.\n` +
+      `GitHub API URL "${shown}" cannot be used: ${reason}.\n` +
         `It comes from the GITHUB_API_URL environment variable. Unset it to use github.com, ` +
         `or set it to your GitHub Enterprise Server API, for example https://github.example.com/api/v3`,
       'GITHUB_API_URL_INVALID',
-      { apiUrl, reason },
+      { apiUrl: shown, reason },
     );
 
   let url: URL;
