@@ -31,6 +31,24 @@ export interface LocalReleaseOptions {
  * Execute local release workflow.
  */
 /**
+ * The tag of the new version must be free. Found out only when the tag is
+ * created, a taken one leaves a release commit without a tag. Checked in a
+ * dry run too: the run it previews would fail.
+ */
+async function requireFreeTag(repo: LocalRepo, from: string, to: string): Promise<void> {
+  const tag = `v${to}`;
+  if (!(await repo.tagExists(tag))) return;
+
+  throw new PlsError(
+    `Cannot release ${to}: the tag ${tag} already exists, ` +
+      `while .pls/versions.json says the current version is ${from}.\n` +
+      `If ${to} was released before, set "version" in .pls/versions.json to "${to}" and commit that. ` +
+      `If the tag is a leftover, delete it with: git tag -d ${tag}`,
+    'TAG_EXISTS',
+  );
+}
+
+/**
  * Push the release commit and its tag. By now the release exists in the local
  * repository, so a failed push must say that and how to finish, not only what
  * git printed.
@@ -103,6 +121,8 @@ export async function localReleaseWorkflow(
       dryRun,
     };
   }
+
+  await requireFreeTag(repo, bump.from, bump.to);
 
   // 5. Build release files
   const changelogEntry = generateReleaseNotes(bump); // For CHANGELOG.md (with version header)
@@ -208,6 +228,8 @@ export async function transitionWorkflow(
     type: bumpType,
     commits: [],
   };
+
+  await requireFreeTag(repo, from, to);
 
   // 3. Build release files
   const changelog = `Transition to ${target}: ${from} → ${to}`;

@@ -225,6 +225,44 @@ Deno.test('a release commits its own files only', async (t) => {
   }
 });
 
+Deno.test('a release whose tag is taken', async (t) => {
+  for (const kind of ['release', 'transition'] as const) {
+    for (const dryRun of [true, false]) {
+      await t.step(
+        `${kind}, ${dryRun ? 'dry run' : 'execute'}: stops before it changes anything`,
+        async () => {
+          const { dir, git, cleanup } = await createTestRepo();
+
+          try {
+            await setupVersionedRepo(git, '1.0.0');
+            await git.writeFile('src/feature.ts', 'export const a = 1;\n');
+            await git.commitAll('feat: add a');
+            const tag = kind === 'release' ? 'v1.1.0' : 'v1.1.0-alpha.0';
+            await run(dir, ['git', 'tag', tag]);
+            const head = await git.getHeadRevision();
+
+            const error = await assertRejects(
+              () =>
+                kind === 'release'
+                  ? localReleaseWorkflow(git, { dryRun, push: false })
+                  : transitionWorkflow(git, 'alpha', 'minor', { dryRun, push: false }),
+              PlsError,
+            );
+            assertEquals(error.code, 'TAG_EXISTS');
+            assertStringIncludes(error.message, `the tag ${tag} already exists`);
+            assertStringIncludes(error.message, `git tag -d ${tag}`);
+
+            assertEquals(await git.getHeadRevision(), head);
+            assertEquals(await run(dir, ['git', 'status', '--porcelain']), '');
+          } finally {
+            await cleanup();
+          }
+        },
+      );
+    }
+  }
+});
+
 Deno.test('a release with push', async (t) => {
   await t.step('pushes the release commit and the tag', async () => {
     const { dir, git, cleanup } = await createTestRepo();
