@@ -4,42 +4,47 @@
  * Implements LocalRepo, BranchSyncable, and RemoteDetectable from domain/vcs.ts.
  */
 
-import { ensureDir } from '@std/fs';
 import { dirname, join } from '@std/path';
 import type { Commit } from '../../domain/types.ts';
 import type { BranchSyncable, LocalRepo, RemoteDetectable } from '../../domain/vcs.ts';
 import { parseGitLogWithParents } from './parse.ts';
 import { PlsError } from '../../lib/error.ts';
+import * as runtime from '../../lib/runtime.ts';
 
 export class LocalGit implements LocalRepo, BranchSyncable, RemoteDetectable {
   /** Set once the history is known to be complete (see ensureFullHistory). */
   private fullHistory = false;
 
-  constructor(private cwd: string = Deno.cwd()) {}
+  constructor(private cwd: string = runtime.cwd()) {}
 
   /**
    * Execute a git command and return stdout.
    */
   private async exec(args: string[]): Promise<string> {
-    const command = new Deno.Command('git', {
-      args,
-      cwd: this.cwd,
-      stdout: 'piped',
-      stderr: 'piped',
-    });
-
-    const { code, stdout, stderr } = await command.output();
+    let result: runtime.CommandResult;
+    try {
+      result = await runtime.runCommand('git', args, { cwd: this.cwd });
+    } catch (error) {
+      throw new PlsError(
+        `Could not start git in ${this.cwd}: ${
+          error instanceof Error ? error.message : String(error)
+        }\n` +
+          `Check that git is installed and on your PATH, and that the directory exists.`,
+        'GIT_NOT_STARTED',
+        { args, cwd: this.cwd },
+      );
+    }
+    const { code, stdout, stderr } = result;
 
     if (code !== 0) {
-      const error = new TextDecoder().decode(stderr);
       throw new PlsError(
-        `Git command failed: git ${args.join(' ')}\n${error}`,
+        `Git command failed: git ${args.join(' ')}\n${stderr}`,
         'GIT_ERROR',
-        { args, error },
+        { args, error: stderr },
       );
     }
 
-    return new TextDecoder().decode(stdout).trim();
+    return stdout.trim();
   }
 
   /**
@@ -58,20 +63,14 @@ export class LocalGit implements LocalRepo, BranchSyncable, RemoteDetectable {
   async readFile(path: string): Promise<string | null> {
     try {
       const fullPath = join(this.cwd, path);
-      return await Deno.readTextFile(fullPath);
+      return await runtime.readTextFile(fullPath);
     } catch {
       return null;
     }
   }
 
   async fileExists(path: string): Promise<boolean> {
-    try {
-      const fullPath = join(this.cwd, path);
-      await Deno.stat(fullPath);
-      return true;
-    } catch {
-      return false;
-    }
+    return await runtime.pathExists(join(this.cwd, path));
   }
 
   // --- Git History ---
@@ -186,8 +185,8 @@ export class LocalGit implements LocalRepo, BranchSyncable, RemoteDetectable {
 
   async writeFile(path: string, content: string): Promise<void> {
     const fullPath = join(this.cwd, path);
-    await ensureDir(dirname(fullPath));
-    await Deno.writeTextFile(fullPath, content);
+    await runtime.ensureDir(dirname(fullPath));
+    await runtime.writeTextFile(fullPath, content);
   }
 
   async commit(message: string): Promise<string> {

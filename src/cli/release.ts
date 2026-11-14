@@ -8,6 +8,7 @@ import { GitHub } from '../clients/github.ts';
 import { releaseWorkflow } from '../workflows/pr-release.ts';
 import { loadConfig } from '../domain/config.ts';
 import { PlsError } from '../lib/error.ts';
+import * as runtime from '../lib/runtime.ts';
 import * as output from './output.ts';
 
 const HELP = `
@@ -81,8 +82,8 @@ export async function release(args: string[]): Promise<void> {
   }
 
   // Create GitHub client
-  const token = parsed.token || Deno.env.get('GITHUB_TOKEN') || '';
-  const github = new GitHub({ owner, repo, token, apiUrl: Deno.env.get('GITHUB_API_URL') });
+  const token = parsed.token || runtime.env('GITHUB_TOKEN') || '';
+  const github = new GitHub({ owner, repo, token, apiUrl: runtime.env('GITHUB_API_URL') });
 
   // Execute workflow
   const result = await releaseWorkflow(git, github, { config });

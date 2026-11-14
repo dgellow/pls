@@ -20,6 +20,7 @@ import { release } from './release.ts';
 import { LocalGit } from '../clients/git/local.ts';
 import { localReleaseWorkflow, transitionWorkflow } from '../workflows/local-release.ts';
 import { PlsError } from '../lib/error.ts';
+import * as runtime from '../lib/runtime.ts';
 import { VERSION } from '../version_info.ts';
 import * as output from './output.ts';
 
@@ -53,7 +54,7 @@ ${output.bold('EXAMPLES:')}
 `;
 
 async function main(): Promise<void> {
-  const args = Deno.args;
+  const args = runtime.args();
 
   // Route to subcommands
   if (args[0] === 'init') {
@@ -226,6 +227,6 @@ if (import.meta.main) {
     } else {
       output.error('Unexpected error', String(error));
     }
-    Deno.exit(1);
+    runtime.exit(1);
   }
 }

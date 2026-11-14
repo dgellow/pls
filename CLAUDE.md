@@ -100,6 +100,7 @@ src/
 │   └── github.ts       # GitHub API client (implements CodeHost)
 ├── lib/
 │   ├── error.ts        # PlsError class
+│   ├── runtime.ts      # Process, env, file and subprocess access (the only runtime-specific module)
 │   └── semver.ts       # Semantic version utilities
 └── version_info.ts     # VERSION constant (auto-updated)
 ```
