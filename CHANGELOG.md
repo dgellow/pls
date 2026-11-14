@@ -1,5 +1,73 @@
 # Changelog
 
+## 0.8.0
+
+### ⚠️ Breaking Changes
+
+- do not let an older prep run overwrite a newer release PR
+- refuse a version tag that already points at another commit
+- stop the release when the configured version file cannot be updated
+- detect breaking changes from the footer, not from words in the body
+
+### Features
+
+- read the GitHub API base URL from GITHUB_API_URL
+
+### Bug Fixes
+
+- state the offending value in the .pls/config.json errors
+- print an error once
+- tell a file that cannot be read from one that is not there
+- name the file and its shape when .pls/versions.json is malformed
+- refuse a local release whose tag already exists, before the commit
+- say that the release exists when the push after it fails
+- create the directory of the --json-output file
+- work from any directory of the repository, and say so outside one
+- keep a gitignored release file out of the commit, as before
+- commit only the release files in a local release
+- name the missing value when an option is written as --base=
+- stop on a command or option pls does not know
+- the GitHub API host is fixed, not configurable
+- start git with scoped Deno permissions; never read a failed start as "nothing found"
+- send the GitHub token only to a checked API URL
+- say on the release PR when commits pushed to its branch are discarded
+- end release notes at the release commit when completing a release later
+- give every GitHub request a time limit
+- keep the mode of files that a release commit rewrites
+- change only the version value in JSON manifests
+- keep a changelog's introduction above new entries
+- **sim:** kill a hung step's processes without relying on `timeout`
+- make a version chosen in the release PR hold, and accept only real choices
+- fetch missing history in a shallow clone instead of finding no changes
+- release what .pls/versions.json says, not what a commit message claims
+- fail the run when the GitHub Release cannot be created
+- read files from GitHub as UTF-8, and above 1 MB
+
+### Code Refactoring
+
+- route process, file and subprocess access through lib/runtime.ts
+
+### Documentation
+
+- show the new commit signature in CLAUDE.md
+- bring CLAUDE.md in line with the CLI as it is
+- list release-branch.ts in the architecture overview
+- add the simulation report
+
+### Tests
+
+- assert the masked API URL exactly
+- add release scenarios for pls and three other release tools
+- add a simulated GitHub and GitHub Actions
+
+### CI
+
+- move the workflows to action versions that run on Node 24
+- publish to npm on Node 24; npm 12 refuses Node 20
+- build, test and publish on Deno 2.9; install Deno from GitHub releases
+- do not run the simulation on pls's own release PR
+- build the simulation report in CI instead of committing it
+
 ## 0.7.3
 
 ### Bug Fixes
