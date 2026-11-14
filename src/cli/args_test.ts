@@ -27,6 +27,14 @@ Deno.test('rejectUnknownOptions', async (t) => {
     }
   });
 
+  await t.step('says so when an option is written with = and no value', () => {
+    for (const arg of ['--base=', '--execute=']) {
+      const error = assertThrows(() => parse([arg]), PlsError);
+      assertEquals(error.code, 'MISSING_OPTION_VALUE', arg);
+      assertEquals(error.message.includes(`Option "${arg.slice(0, -1)}" has no value`), true);
+    }
+  });
+
   await t.step('keeps positional arguments for checkPositionals', () => {
     assertEquals(parse(['extra', '--execute'])._, ['extra']);
   });

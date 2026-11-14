@@ -62,6 +62,7 @@ Deno.test('cli: arguments it does not know', async (t) => {
       [['init', '--execute', '--versoin=2.0.0'], 'Unknown option "--versoin=2.0.0" for `pls init`'],
       [['init', '--execute', '--strategy=bogus'], 'Invalid strategy "bogus"'],
       [['prep', '--execute', 'extra'], 'Unexpected argument "extra" for `pls prep`'],
+      [['prep', '--execute', '--base='], 'Option "--base" has no value'],
       [['sync', '--pr=12abc'], 'Invalid PR number "12abc"'],
       [['release', '--tokne=x'], 'Unknown option "--tokne=x" for `pls release`'],
       [
