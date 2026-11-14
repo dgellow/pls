@@ -107,7 +107,7 @@ async function handleLocalRelease(args: string[]): Promise<void> {
 
   output.header('📦 pls');
 
-  const git = new LocalGit();
+  const git = await LocalGit.open();
 
   const result = await localReleaseWorkflow(git, {
     dryRun: !parsed.execute,
@@ -189,7 +189,7 @@ ${output.bold('EXAMPLES:')}
 
   output.header('📦 pls transition');
 
-  const git = new LocalGit();
+  const git = await LocalGit.open();
 
   const result = await transitionWorkflow(
     git,

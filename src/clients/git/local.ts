@@ -18,6 +18,24 @@ export class LocalGit implements LocalRepo, BranchSyncable, RemoteDetectable {
   constructor(private cwd: string = runtime.cwd()) {}
 
   /**
+   * The client for the repository that contains `dir`, rooted at its top
+   * level. pls reads and writes paths relative to the root, so it works the
+   * same from any directory of the repository. Outside a repository it stops
+   * here, rather than report later that pls was never initialised.
+   */
+  static async open(dir: string = runtime.cwd()): Promise<LocalGit> {
+    const root = await new LocalGit(dir).execSafe(['rev-parse', '--show-toplevel']);
+    if (!root) {
+      throw new PlsError(
+        `Not in a git repository: ${dir}\n` +
+          `Run pls from the working tree of a git repository.`,
+        'NOT_A_GIT_REPOSITORY',
+      );
+    }
+    return new LocalGit(root);
+  }
+
+  /**
    * Execute a git command and return stdout.
    */
   private async exec(args: string[]): Promise<string> {

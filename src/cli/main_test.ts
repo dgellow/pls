@@ -95,6 +95,40 @@ Deno.test('cli: arguments it does not know', async (t) => {
   }
 });
 
+Deno.test('cli: where it is started', async (t) => {
+  const { dir, cleanup } = await releasableRepo();
+  const outside = await Deno.makeTempDir({ prefix: 'pls-test-outside-' });
+
+  try {
+    await t.step('a subdirectory of the repository works like its root', async () => {
+      await Deno.mkdir(`${dir}/src/deep`, { recursive: true });
+      const result = await pls(`${dir}/src/deep`, []);
+      assertEquals(result.code, 0, result.stderr);
+      assertEquals(result.stdout.includes('1.2.2 → 1.3.0'), true, result.stdout);
+    });
+
+    await t.step('outside a repository, every command says so', async () => {
+      for (
+        const args of [[], ['init'], ['prep'], ['sync', '--pr=1'], ['release'], [
+          'transition',
+          'beta',
+        ]]
+      ) {
+        const result = await pls(outside, args);
+        assertEquals(result.code, 1, args.join(' '));
+        assertEquals(
+          result.stderr.includes('❌ Not in a git repository'),
+          true,
+          `pls ${args.join(' ')}: ${result.stdout}${result.stderr}`,
+        );
+      }
+    });
+  } finally {
+    await cleanup();
+    await Deno.remove(outside, { recursive: true });
+  }
+});
+
 Deno.test('cli: --execute on the commands that have no dry run', async (t) => {
   const { dir, cleanup } = await createTestRepo();
   try {

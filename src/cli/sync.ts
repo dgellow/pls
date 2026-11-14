@@ -66,7 +66,7 @@ export async function sync(args: string[]): Promise<void> {
   output.header('📦 pls sync');
 
   // Get repo info
-  const git = new LocalGit();
+  const git = await LocalGit.open();
   let owner = parsed.owner;
   let repo = parsed.repo;
 

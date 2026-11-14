@@ -62,7 +62,7 @@ export async function init(args: string[]): Promise<void> {
 
   output.header('📦 pls init');
 
-  const git = new LocalGit();
+  const git = await LocalGit.open();
 
   // Show detection info
   const project = await detectProject(git);
