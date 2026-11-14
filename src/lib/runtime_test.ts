@@ -94,3 +94,60 @@ Deno.test('runtime', async (t) => {
 
   await Deno.remove(dir, { recursive: true });
 });
+
+Deno.test('runtime: runCommandWithNode behaves like runCommand', async (t) => {
+  const dir = await Deno.makeTempDir({ prefix: 'pls-runtime-node-' });
+
+  await t.step('output, exit code and working directory', async () => {
+    const ok = await runtime.runCommandWithNode('git', ['--version']);
+    assertEquals(ok.code, 0);
+    assertEquals(ok.stdout.startsWith('git version'), true);
+
+    const failed = await runtime.runCommandWithNode('git', ['no-such-subcommand']);
+    assertEquals(failed.code !== 0, true);
+    assertEquals(failed.stderr.includes('no-such-subcommand'), true);
+
+    await runtime.runCommandWithNode('git', ['init', '--quiet'], { cwd: dir });
+    const top = await runtime.runCommandWithNode('git', ['rev-parse', '--show-toplevel'], {
+      cwd: dir,
+    });
+    assertEquals(await Deno.realPath(top.stdout.trim()), await Deno.realPath(dir));
+  });
+
+  await t.step('output larger than a pipe buffer', async () => {
+    const big = 'x'.repeat(3 * 1024 * 1024);
+    await runtime.writeTextFile(join(dir, 'big.txt'), big);
+    const result = await runtime.runCommandWithNode(
+      'git',
+      ['--no-pager', 'grep', '--no-index', '-h', 'x', 'big.txt'],
+      { cwd: dir },
+    );
+    assertEquals(result.stdout.length, big.length + 1);
+  });
+
+  await t.step('rejects when the program does not exist', async () => {
+    await assertRejects(() => runtime.runCommandWithNode('pls-no-such-program', []));
+  });
+
+  await Deno.remove(dir, { recursive: true });
+});
+
+// A user who grants pls only what it needs (git, and the variables it reads)
+// must still get git started. Deno's node:child_process cannot do that.
+Deno.test({
+  name: 'runtime: runCommand starts git without unrestricted env permission',
+  permissions: { run: ['git'], env: ['GITHUB_TOKEN'] },
+  async fn() {
+    const result = await runtime.runCommand('git', ['--version']);
+    assertEquals(result.code, 0);
+    assertEquals(result.stdout.startsWith('git version'), true);
+  },
+});
+
+Deno.test({
+  name: 'runtime: a program pls may not run is an error, not an empty answer',
+  permissions: { run: false },
+  async fn() {
+    await assertRejects(() => runtime.runCommand('git', ['--version']));
+  },
+});

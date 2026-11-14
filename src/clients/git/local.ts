@@ -25,11 +25,15 @@ export class LocalGit implements LocalRepo, BranchSyncable, RemoteDetectable {
     try {
       result = await runtime.runCommand('git', args, { cwd: this.cwd });
     } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      // Deno refuses to start a program it was not given permission for.
+      const notAllowed = error instanceof Error &&
+        (error.name === 'NotCapable' || error.name === 'PermissionDenied');
       throw new PlsError(
-        `Could not start git in ${this.cwd}: ${
-          error instanceof Error ? error.message : String(error)
-        }\n` +
-          `Check that git is installed and on your PATH, and that the directory exists.`,
+        `Could not start git in ${this.cwd}: ${reason}\n` +
+          (notAllowed
+            ? `pls needs permission to run git: add --allow-run=git to the deno command.`
+            : `Check that git is installed and on your PATH, and that the directory exists.`),
         'GIT_NOT_STARTED',
         { args, cwd: this.cwd },
       );
@@ -53,7 +57,10 @@ export class LocalGit implements LocalRepo, BranchSyncable, RemoteDetectable {
   private async execSafe(args: string[]): Promise<string | null> {
     try {
       return await this.exec(args);
-    } catch {
+    } catch (error) {
+      // "git answered no" is an answer. "git could not be started" is not:
+      // treating it as one would report an empty repository.
+      if (error instanceof PlsError && error.code === 'GIT_NOT_STARTED') throw error;
       return null;
     }
   }
