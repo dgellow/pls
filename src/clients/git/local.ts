@@ -87,10 +87,19 @@ export class LocalGit implements LocalRepo, BranchSyncable, RemoteDetectable {
 
   async readFile(path: string): Promise<string | null> {
     try {
-      const fullPath = join(this.cwd, path);
-      return await runtime.readTextFile(fullPath);
-    } catch {
-      return null;
+      return await runtime.readTextFile(join(this.cwd, path));
+    } catch (error) {
+      // "There is no such file" is an answer. A file that is there and cannot
+      // be read is not: reported as missing, it sends the user to `pls init`.
+      const code = error instanceof Error && 'code' in error ? error.code : undefined;
+      if (code === 'ENOENT' || code === 'ENOTDIR') return null;
+
+      const reason = error instanceof Error ? error.message : String(error);
+      throw new PlsError(
+        `Could not read ${path}: ${reason}\n` +
+          `The path exists in ${this.cwd} but is not a file pls can read. Check what is there and its permissions.`,
+        'FILE_READ_FAILED',
+      );
     }
   }
 
