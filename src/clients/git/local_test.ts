@@ -146,6 +146,46 @@ Deno.test('LocalGit commit takes the given paths and nothing else', async (t) =>
 
 // --- Tag Operations ---
 
+Deno.test('LocalGit commit leaves out a path that .gitignore excludes', async (t) => {
+  const { dir, git, cleanup } = await createTestRepo();
+
+  try {
+    await git.writeFile('.gitignore', 'CHANGELOG.md\n');
+    await git.writeFile('version.txt', '1.0.0\n');
+    await git.commitAll('chore: init');
+
+    await t.step('the other paths are committed', async () => {
+      await git.writeFile('version.txt', '1.1.0\n');
+      await git.writeFile('CHANGELOG.md', '# Changelog\n');
+      await git.commit('chore: release v1.1.0', ['version.txt', 'CHANGELOG.md']);
+
+      const changed = await run(dir, ['git', 'show', '--name-only', '--format=', 'HEAD']);
+      assertEquals(changed, 'version.txt');
+      assertEquals(await run(dir, ['git', 'status', '--porcelain']), '');
+    });
+
+    await t.step(
+      'a commit of ignored paths only is refused, with the index untouched',
+      async () => {
+        await git.writeFile('staged.txt', 'staged by the user\n');
+        await run(dir, ['git', 'add', 'staged.txt']);
+        const head = await git.getHeadRevision();
+
+        const error = await assertRejects(
+          () => git.commit('chore: release v1.2.0', ['CHANGELOG.md']),
+          PlsError,
+        );
+        assertEquals(error.code, 'NOTHING_TO_COMMIT');
+        assertStringIncludes(error.message, 'CHANGELOG.md');
+        assertEquals(await git.getHeadRevision(), head);
+        assertEquals(await run(dir, ['git', 'status', '--porcelain']), 'A  staged.txt');
+      },
+    );
+  } finally {
+    await cleanup();
+  }
+});
+
 Deno.test('LocalGit tag operations', async (t) => {
   const { git, cleanup } = await createTestRepo();
 
