@@ -287,50 +287,57 @@ Deno.test('GitHub client: the API URL and the repository names are checked up fr
   const client = (apiUrl: string | undefined, owner = 'acme', repo = 'widget') =>
     new GitHub({ owner, repo, token: 't', apiUrl });
 
-  await t.step('accepts github.com, a GitHub Enterprise Server URL and a local server', () => {
+  await t.step('goes to github.com unless told about a local server', () => {
     assertEquals(resolveApiUrl(undefined), 'https://api.github.com');
     assertEquals(resolveApiUrl(''), 'https://api.github.com');
+    // What GitHub Actions sets on github.com.
+    assertEquals(resolveApiUrl('https://api.github.com'), 'https://api.github.com');
     assertEquals(resolveApiUrl('https://api.github.com/'), 'https://api.github.com');
-    assertEquals(
-      resolveApiUrl('https://github.example.com/api/v3/'),
-      'https://github.example.com/api/v3',
-    );
+  });
+
+  await t.step('accepts a server on this machine', () => {
     assertEquals(resolveApiUrl('http://127.0.0.1:8080'), 'http://127.0.0.1:8080');
+    assertEquals(resolveApiUrl('http://127.0.0.1:8080/'), 'http://127.0.0.1:8080');
     assertEquals(resolveApiUrl('http://localhost:8080/'), 'http://localhost:8080');
+    assertEquals(resolveApiUrl('http://[::1]:8080'), 'http://[::1]:8080');
   });
 
-  await t.step('refuses to send the token over plain http to another machine', () => {
-    const error = assertThrows(() => client('http://github.example.com/api/v3'), PlsError);
-    assertEquals(error.code, 'GITHUB_API_URL_INVALID');
-    assertEquals(error.message.includes('GITHUB_API_URL'), true);
-    assertEquals(error.message.includes('use https'), true);
-  });
-
-  await t.step('refuses what is not a usable base URL', () => {
+  await t.step('refuses every other server, GitHub Enterprise Server included', () => {
     for (
-      const bad of [
+      const other of [
+        'https://github.example.com/api/v3',
+        'http://github.example.com/api/v3',
+        'https://api.github.com.example.com',
+        'https://api.github.com/v3',
+        'https://api.github.com@evil.example.com',
+        'http://127.0.0.1.example.com:8080',
+        'http://127.0.0.2:8080',
+        'https://127.0.0.1:8080',
+        'http://127.0.0.1',
+        'http://127.0.0.1:8080/api',
+        'http://127.0.0.1:8080?x=1',
+        'http://127.0.0.1:8080#frag',
+        'http://user:secret@127.0.0.1:8080',
+        'ftp://127.0.0.1:8080',
         'not a url',
-        'ftp://github.example.com',
-        'https://user:secret@github.example.com',
-        'https://github.example.com/api/v3?x=1',
-        'https://github.example.com/api/v3#frag',
-        'http://127.0.0.1.example.com',
       ]
     ) {
-      const error = assertThrows(() => client(bad), PlsError, undefined, bad);
-      assertEquals(error.code, 'GITHUB_API_URL_INVALID', bad);
+      const error = assertThrows(() => client(other), PlsError, undefined, other);
+      assertEquals(error.code, 'GITHUB_API_URL_UNSUPPORTED', other);
+      assertEquals(error.message.includes('GITHUB_API_URL'), true);
+      assertEquals(error.message.includes('github.com only'), true);
     }
   });
 
   await t.step('does not echo credentials found in the URL', () => {
     const cases = [
       ['https://user:hunter2@github.example.com/api/v3', 'https://***@github.example.com/api/v3'],
-      ['http://user:hunter2@github.example.com/api/v3', 'http://***@github.example.com/api/v3'],
+      ['http://user:hunter2@127.0.0.1:8080', 'http://***@127.0.0.1:8080'],
       ['user:hunter2@github.example.com', '***@github.example.com'],
     ];
     for (const [bad, shown] of cases) {
       const error = assertThrows(() => client(bad), PlsError);
-      assertEquals(error.code, 'GITHUB_API_URL_INVALID');
+      assertEquals(error.code, 'GITHUB_API_URL_UNSUPPORTED');
       assertEquals((error.details as { apiUrl: string }).apiUrl, shown);
       assertEquals(error.message.includes(`"${shown}"`), true, error.message);
       assertEquals(error.message.includes('hunter2'), false, error.message);
