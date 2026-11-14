@@ -5,6 +5,7 @@
  */
 
 import { bold, cyan, green, red, yellow } from '@std/fmt/colors';
+import * as runtime from '../lib/runtime.ts';
 
 export { bold, cyan, green, red, yellow };
 
@@ -114,5 +115,5 @@ export async function writeJsonOutput(
   path: string,
   data: unknown,
 ): Promise<void> {
-  await Deno.writeTextFile(path, JSON.stringify(data, null, 2) + '\n');
+  await runtime.writeTextFile(path, JSON.stringify(data, null, 2) + '\n');
 }
