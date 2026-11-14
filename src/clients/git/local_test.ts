@@ -39,6 +39,17 @@ Deno.test('LocalGit file operations', async (t) => {
       assertEquals(content, null);
     });
 
+    await t.step('readFile returns null below a path that is a file', async () => {
+      assertEquals(await git.readFile('test.txt/inner.txt'), null);
+    });
+
+    await t.step('readFile fails on a path that exists and is not a readable file', async () => {
+      await Deno.mkdir(`${dir}/.pls/versions.json`, { recursive: true });
+      const error = await assertRejects(() => git.readFile('.pls/versions.json'), PlsError);
+      assertEquals(error.code, 'FILE_READ_FAILED');
+      assertStringIncludes(error.message, 'Could not read .pls/versions.json');
+    });
+
     await t.step('fileExists returns true for existing file', async () => {
       const exists = await git.fileExists('test.txt');
       assertEquals(exists, true);
