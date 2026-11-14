@@ -20,6 +20,7 @@ import { release } from './release.ts';
 import { LocalGit } from '../clients/git/local.ts';
 import { localReleaseWorkflow, transitionWorkflow } from '../workflows/local-release.ts';
 import { PlsError } from '../lib/error.ts';
+import { checkPositionals, rejectUnknownOptions } from './args.ts';
 import * as runtime from '../lib/runtime.ts';
 import { VERSION } from '../version_info.ts';
 import * as output from './output.ts';
@@ -90,7 +91,9 @@ async function handleLocalRelease(args: string[]): Promise<void> {
   const parsed = parseArgs(args, {
     boolean: ['help', 'version', 'execute', 'push'],
     string: ['json-output'],
+    unknown: rejectUnknownOptions('pls'),
   });
+  checkPositionals('pls', parsed._, 0);
 
   if (parsed.help) {
     output.help(HELP);
@@ -138,7 +141,9 @@ async function handleTransition(args: string[]): Promise<void> {
   const parsed = parseArgs(args, {
     boolean: ['help', 'execute', 'push', 'major', 'minor', 'patch'],
     string: ['json-output'],
+    unknown: rejectUnknownOptions('pls transition'),
   });
+  checkPositionals('pls transition', parsed._, 1);
 
   if (parsed.help || parsed._.length === 0) {
     console.log(`

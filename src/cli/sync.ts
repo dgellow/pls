@@ -7,6 +7,7 @@ import { LocalGit } from '../clients/git/local.ts';
 import { GitHub } from '../clients/github.ts';
 import { syncWorkflow } from '../workflows/pr-sync.ts';
 import { PlsError } from '../lib/error.ts';
+import { checkPositionals, rejectUnknownOptions } from './args.ts';
 import * as runtime from '../lib/runtime.ts';
 import * as output from './output.ts';
 
@@ -31,12 +32,16 @@ ${output.bold('EXAMPLES:')}
 
 export async function sync(args: string[]): Promise<void> {
   const parsed = parseArgs(args, {
-    boolean: ['help'],
+    // sync has no dry run. --execute is taken and changes nothing, so that the
+    // flag the other commands need is not an error here.
+    boolean: ['help', 'execute'],
     string: ['pr', 'base', 'owner', 'repo', 'token', 'json-output'],
     default: {
       base: 'main',
     },
+    unknown: rejectUnknownOptions('pls sync'),
   });
+  checkPositionals('pls sync', parsed._, 0);
 
   if (parsed.help) {
     output.help(HELP);
@@ -50,10 +55,10 @@ export async function sync(args: string[]): Promise<void> {
     );
   }
 
-  const prNumber = parseInt(parsed.pr, 10);
-  if (isNaN(prNumber) || prNumber <= 0) {
+  const prNumber = /^[0-9]+$/.test(parsed.pr) ? Number(parsed.pr) : NaN;
+  if (!Number.isSafeInteger(prNumber) || prNumber <= 0) {
     throw new PlsError(
-      `Invalid PR number: ${parsed.pr}`,
+      `Invalid PR number "${parsed.pr}". Use the number of the release PR, like --pr=42`,
       'INVALID_PR_NUMBER',
     );
   }

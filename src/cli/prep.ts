@@ -7,6 +7,7 @@ import { LocalGit } from '../clients/git/local.ts';
 import { GitHub } from '../clients/github.ts';
 import { prepWorkflow } from '../workflows/pr-create.ts';
 import { PlsError } from '../lib/error.ts';
+import { checkPositionals, rejectUnknownOptions } from './args.ts';
 import * as runtime from '../lib/runtime.ts';
 import * as output from './output.ts';
 
@@ -37,7 +38,9 @@ export async function prep(args: string[]): Promise<void> {
     default: {
       base: 'main',
     },
+    unknown: rejectUnknownOptions('pls prep'),
   });
+  checkPositionals('pls prep', parsed._, 0);
 
   if (parsed.help) {
     output.help(HELP);

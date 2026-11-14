@@ -70,6 +70,7 @@ Do one thing well. Resist the urge to add features "while we're at it."
 src/
 ├── cli/
 │   ├── main.ts         # Entry point, argument parsing
+│   ├── args.ts         # Argument checks shared by the commands
 │   ├── init.ts         # pls init command
 │   ├── prep.ts         # pls prep command
 │   ├── sync.ts         # pls sync command

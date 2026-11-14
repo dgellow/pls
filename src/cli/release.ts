@@ -8,6 +8,7 @@ import { GitHub } from '../clients/github.ts';
 import { releaseWorkflow } from '../workflows/pr-release.ts';
 import { loadConfig } from '../domain/config.ts';
 import { PlsError } from '../lib/error.ts';
+import { checkPositionals, rejectUnknownOptions } from './args.ts';
 import * as runtime from '../lib/runtime.ts';
 import * as output from './output.ts';
 
@@ -40,9 +41,13 @@ ${output.bold('EXAMPLES:')}
 
 export async function release(args: string[]): Promise<void> {
   const parsed = parseArgs(args, {
-    boolean: ['help'],
+    // release has no dry run. --execute is taken and changes nothing, so that
+    // the flag the other commands need is not an error here.
+    boolean: ['help', 'execute'],
     string: ['owner', 'repo', 'token', 'json-output'],
+    unknown: rejectUnknownOptions('pls release'),
   });
+  checkPositionals('pls release', parsed._, 0);
 
   if (parsed.help) {
     output.help(HELP);
