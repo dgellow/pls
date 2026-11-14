@@ -225,10 +225,10 @@ if (import.meta.main) {
     await main();
   } catch (error) {
     if (error instanceof PlsError) {
+      // The message is written to stand alone. `details` holds the same facts
+      // as fields, for code that handles the error: printing them repeats
+      // the message, and for a git failure repeats git's whole output.
       output.error(error.message);
-      if (error.details) {
-        console.error(output.red('Details:'), error.details);
-      }
     } else {
       output.error('Unexpected error', String(error));
     }
