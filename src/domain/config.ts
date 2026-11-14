@@ -54,7 +54,9 @@ function parseConfig(content: string): Partial<PlsConfig> {
   if ('baseBranch' in parsed) {
     if (typeof parsed.baseBranch !== 'string') {
       throw new PlsError(
-        'Invalid config: baseBranch must be a string',
+        `Invalid .pls/config.json: baseBranch must be a string, found ${
+          JSON.stringify(parsed.baseBranch)
+        }`,
         'CONFIG_VALIDATION_ERROR',
         { field: 'baseBranch', value: parsed.baseBranch },
       );
@@ -65,7 +67,9 @@ function parseConfig(content: string): Partial<PlsConfig> {
   if ('targetBranch' in parsed) {
     if (typeof parsed.targetBranch !== 'string') {
       throw new PlsError(
-        'Invalid config: targetBranch must be a string',
+        `Invalid .pls/config.json: targetBranch must be a string, found ${
+          JSON.stringify(parsed.targetBranch)
+        }`,
         'CONFIG_VALIDATION_ERROR',
         { field: 'targetBranch', value: parsed.targetBranch },
       );
@@ -76,7 +80,9 @@ function parseConfig(content: string): Partial<PlsConfig> {
   if ('releaseBranch' in parsed) {
     if (typeof parsed.releaseBranch !== 'string') {
       throw new PlsError(
-        'Invalid config: releaseBranch must be a string',
+        `Invalid .pls/config.json: releaseBranch must be a string, found ${
+          JSON.stringify(parsed.releaseBranch)
+        }`,
         'CONFIG_VALIDATION_ERROR',
         { field: 'releaseBranch', value: parsed.releaseBranch },
       );
@@ -87,7 +93,9 @@ function parseConfig(content: string): Partial<PlsConfig> {
   if ('versionFile' in parsed) {
     if (typeof parsed.versionFile !== 'string') {
       throw new PlsError(
-        'Invalid config: versionFile must be a string',
+        `Invalid .pls/config.json: versionFile must be a string, found ${
+          JSON.stringify(parsed.versionFile)
+        }`,
         'CONFIG_VALIDATION_ERROR',
         { field: 'versionFile', value: parsed.versionFile },
       );
@@ -98,7 +106,8 @@ function parseConfig(content: string): Partial<PlsConfig> {
   if ('strategy' in parsed) {
     if (parsed.strategy !== 'simple' && parsed.strategy !== 'next') {
       throw new PlsError(
-        'Invalid config: strategy must be "simple" or "next"',
+        `Invalid .pls/config.json: strategy must be "simple" or "next", ` +
+          `found ${JSON.stringify(parsed.strategy)}`,
         'CONFIG_VALIDATION_ERROR',
         { field: 'strategy', value: parsed.strategy },
       );

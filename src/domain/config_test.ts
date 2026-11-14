@@ -127,3 +127,16 @@ Deno.test('generateConfigFile', async (t) => {
     assertEquals(parsed.versionFile, 'src/version.ts');
   });
 });
+
+Deno.test('a config value of the wrong kind is named in the message', () => {
+  const cases: [string, string][] = [
+    ['{ "baseBranch": 42 }', 'baseBranch must be a string, found 42'],
+    ['{ "versionFile": ["a"] }', 'versionFile must be a string, found ["a"]'],
+    ['{ "strategy": "nxt" }', 'strategy must be "simple" or "next", found "nxt"'],
+  ];
+  for (const [content, expected] of cases) {
+    const error = assertThrows(() => loadConfig(content), PlsError);
+    assertEquals(error.code, 'CONFIG_VALIDATION_ERROR');
+    assertEquals(error.message, `Invalid .pls/config.json: ${expected}`);
+  }
+});
