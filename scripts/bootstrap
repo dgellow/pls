@@ -1,18 +1,62 @@
 #!/bin/sh
 set -e
 
-if ! command -v deno >/dev/null 2>&1; then
-  echo "Deno not found. Installing..."
-  curl -fsSL https://deno.land/install.sh | sh
-  export DENO_INSTALL="$HOME/.deno"
-  export PATH="$DENO_INSTALL/bin:$PATH"
-  if ! command -v deno >/dev/null 2>&1; then
-    echo "Failed to install deno. Please install manually: https://deno.land/#installation"
+# Installs the latest Deno release into ~/.deno/bin from the release assets of
+# denoland/deno on GitHub. Deno is on its 2.9 maintenance line, so "latest" is
+# the newest 2.9.x. Nothing is fetched from deno.land.
+install_deno() {
+  case "$(uname -sm)" in
+    "Linux x86_64") target="x86_64-unknown-linux-gnu" ;;
+    "Linux aarch64" | "Linux arm64") target="aarch64-unknown-linux-gnu" ;;
+    "Darwin x86_64") target="x86_64-apple-darwin" ;;
+    "Darwin arm64") target="aarch64-apple-darwin" ;;
+    *)
+      echo "No Deno build for $(uname -sm)."
+      echo "Install Deno 2.9 manually: https://github.com/denoland/deno/releases"
+      exit 1
+      ;;
+  esac
+  if ! command -v unzip >/dev/null 2>&1; then
+    echo "unzip is required to install Deno. Install unzip and run this script again."
     exit 1
   fi
-  echo "Deno installed successfully."
+
+  asset="deno-$target.zip"
+  url="https://github.com/denoland/deno/releases/latest/download"
+  bin_dir="$HOME/.deno/bin"
+  tmp_dir="$(mktemp -d)"
+
+  curl -fsSL -o "$tmp_dir/$asset" "$url/$asset"
+  curl -fsSL -o "$tmp_dir/$asset.sha256sum" "$url/$asset.sha256sum"
+  if command -v sha256sum >/dev/null 2>&1; then
+    (cd "$tmp_dir" && sha256sum -c "$asset.sha256sum" >/dev/null)
+  else
+    (cd "$tmp_dir" && shasum -a 256 -c "$asset.sha256sum" >/dev/null)
+  fi
+
+  mkdir -p "$bin_dir"
+  unzip -q -o -d "$bin_dir" "$tmp_dir/$asset"
+  chmod +x "$bin_dir/deno"
+  rm -r "$tmp_dir"
+}
+
+if ! command -v deno >/dev/null 2>&1; then
+  echo "Deno not found. Installing..."
+  install_deno
+  export PATH="$HOME/.deno/bin:$PATH"
+  if ! command -v deno >/dev/null 2>&1; then
+    echo "Failed to install deno. Install it manually: https://github.com/denoland/deno/releases"
+    exit 1
+  fi
+  echo "Deno installed to $HOME/.deno/bin. Add that directory to your PATH."
 fi
 
-echo "Deno version: $(deno --version | head -1)"
+deno_version="$(deno --version | head -1)"
+echo "Deno version: $deno_version"
+case "$deno_version" in
+  "deno 2.9."*) ;;
+  *) echo "Warning: CI runs Deno 2.9.x. Formatting and lint results can differ on other versions." ;;
+esac
+
 echo "Caching dependencies..."
 deno install

@@ -16,7 +16,7 @@ jobs:
 
       - uses: denoland/setup-deno@v2
         with:
-          deno-version: v2.6.x
+          deno-version: v2.9.x
           cache: true
 
       - name: Check formatting
@@ -37,7 +37,7 @@ jobs:
 
       - uses: denoland/setup-deno@v2
         with:
-          deno-version: v2.6.x
+          deno-version: v2.9.x
           cache: true
 
       - name: Type check
@@ -54,15 +54,16 @@ jobs:
 
       - uses: denoland/setup-deno@v2
         with:
-          deno-version: v2.6.x
+          deno-version: v2.9.x
           cache: true
 
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      - name: Build npm packages (linux-x64 only)
-        run: deno run -A scripts/build_npm.ts --platform linux-x64
+      # All five targets, cross-compiled on Linux exactly as publish.yml does.
+      - name: Build npm packages
+        run: deno run -A scripts/build_npm.ts
 
       - name: Test CLI binary
         run: |
@@ -75,3 +76,44 @@ jobs:
           npm init -y
           npm install ${{ github.workspace }}/npm/pls ${{ github.workspace }}/npm/pls-linux-x64
           npx pls --version
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: npm-packages
+          path: npm/
+          retention-days: 1
+
+  # A cross-compiled binary can build and still not start on its own platform
+  # (denoland/deno#31556), so each one is run where it is meant to run.
+  test-binaries:
+    name: Run binary (${{ matrix.package }})
+    needs: test-npm-build
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04-arm
+            package: pls-linux-arm64
+            binary: pls
+          - runner: macos-15-intel
+            package: pls-darwin-x64
+            binary: pls
+          - runner: macos-latest
+            package: pls-darwin-arm64
+            binary: pls
+          - runner: windows-latest
+            package: pls-win32-x64
+            binary: pls.exe
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: npm-packages
+          path: npm
+
+      - name: Run the binary
+        shell: bash
+        run: |
+          chmod +x "npm/${{ matrix.package }}/bin/${{ matrix.binary }}"
+          "npm/${{ matrix.package }}/bin/${{ matrix.binary }}" --version
+          "npm/${{ matrix.package }}/bin/${{ matrix.binary }}" --help
