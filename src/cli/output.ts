@@ -5,6 +5,8 @@
  */
 
 import { bold, cyan, green, red, yellow } from '@std/fmt/colors';
+import { dirname } from '@std/path';
+import { PlsError } from '../lib/error.ts';
 import * as runtime from '../lib/runtime.ts';
 
 export { bold, cyan, green, red, yellow };
@@ -115,5 +117,17 @@ export async function writeJsonOutput(
   path: string,
   data: unknown,
 ): Promise<void> {
-  await runtime.writeTextFile(path, JSON.stringify(data, null, 2) + '\n');
+  try {
+    // The directory may not exist yet: a CI step often names a fresh one.
+    await runtime.ensureDir(dirname(path));
+    await runtime.writeTextFile(path, JSON.stringify(data, null, 2) + '\n');
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    throw new PlsError(
+      `Could not write the JSON result to "${path}": ${reason}\n` +
+        `The command itself has finished: what it did is done, and only this file is missing. ` +
+        `Check that the path can be written.`,
+      'JSON_OUTPUT_FAILED',
+    );
+  }
 }
