@@ -14,7 +14,7 @@ jobs:
       id-token: write
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: denoland/setup-deno@v2
         with:
@@ -33,7 +33,7 @@ jobs:
       id-token: write
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: denoland/setup-deno@v2
         with:
@@ -41,10 +41,13 @@ jobs:
           cache: true
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        # v6, not v7: v7 no longer exports a placeholder NODE_AUTH_TOKEN, and
+        # the npm update step below runs with registry-url set and no token.
+        uses: actions/setup-node@v6
         with:
           node-version: '24'
           registry-url: 'https://registry.npmjs.org'
+          package-manager-cache: false
 
       # Provenance needs a recent npm. The major version is pinned: a new
       # major can drop the Node version this job runs on, and then this step

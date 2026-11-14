@@ -45,7 +45,7 @@ jobs:
       matrix:
         tool: [pls, release-please, changesets, semantic-release]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: denoland/setup-deno@v2
         with:
@@ -53,12 +53,13 @@ jobs:
           cache: true
 
       # The other tools are Node programs. 22 is the version their verdicts were established on.
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: '22'
+          package-manager-cache: false
 
       # Tool installation (npm packages, action checkout).
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: sim/.cache
           key: sim-${{ matrix.tool }}-${{ runner.os }}-${{ hashFiles('sim/tools/*.ts') }}
@@ -66,7 +67,7 @@ jobs:
       - name: Run every scenario against ${{ matrix.tool }}
         run: deno run -A sim/run.ts --tool ${{ matrix.tool }}
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: ${{ !cancelled() && hashFiles('sim/out/results.json') != '' }}
         with:
           name: simulation-${{ matrix.tool }}
@@ -92,14 +93,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: denoland/setup-deno@v2
         with:
           deno-version: v2.9.x
           cache: true
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: simulation-*
           path: results
@@ -122,7 +123,7 @@ jobs:
           deno run -A sim/report.ts "${inputs[@]}" --out report.md
           cat report.md >> "$GITHUB_STEP_SUMMARY"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: simulation-report
           path: report.md
