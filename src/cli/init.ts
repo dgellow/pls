@@ -6,6 +6,7 @@ import { parseArgs } from '@std/cli/parse-args';
 import { LocalGit } from '../clients/git/local.ts';
 import { detectProject, initWorkflow } from '../workflows/init.ts';
 import { PlsError } from '../lib/error.ts';
+import { checkPositionals, rejectUnknownOptions } from './args.ts';
 import * as output from './output.ts';
 
 const HELP = `
@@ -43,11 +44,20 @@ export async function init(args: string[]): Promise<void> {
   const parsed = parseArgs(args, {
     boolean: ['help', 'execute'],
     string: ['version', 'version-file', 'base', 'target', 'strategy', 'json-output'],
+    unknown: rejectUnknownOptions('pls init'),
   });
+  checkPositionals('pls init', parsed._, 0);
 
   if (parsed.help) {
     output.help(HELP);
     return;
+  }
+
+  if (parsed.strategy !== undefined && parsed.strategy !== 'simple' && parsed.strategy !== 'next') {
+    throw new PlsError(
+      `Invalid strategy "${parsed.strategy}". Use --strategy=simple or --strategy=next`,
+      'INVALID_STRATEGY',
+    );
   }
 
   output.header('📦 pls init');
@@ -89,7 +99,7 @@ export async function init(args: string[]): Promise<void> {
   if (parsed.target && parsed.target !== 'main') {
     config.targetBranch = parsed.target;
   }
-  if (parsed.strategy && (parsed.strategy === 'simple' || parsed.strategy === 'next')) {
+  if (parsed.strategy) {
     config.strategy = parsed.strategy;
   }
 
