@@ -113,6 +113,57 @@ export function requireVersionFile(
   return { path, content };
 }
 
+const VERSIONS_SHAPE = '{ ".": { "version": "1.2.3" } }';
+
+/**
+ * Parse .pls/versions.json as the workflows read it.
+ *
+ * The file is edited by hand at times (to add a versionFile, to fix a
+ * version), so a file that does not parse is answered with what is wrong
+ * and what the file must look like.
+ * An entry written as a bare string ("1.2.3") is read as { version }.
+ */
+export function parseVersionsManifest(content: string): VersionsManifest {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(content);
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    throw new PlsError(
+      `.pls/versions.json is not valid JSON: ${reason}\n` +
+        `Fix the file. It looks like this: ${VERSIONS_SHAPE}`,
+      'INVALID_VERSIONS_MANIFEST',
+    );
+  }
+
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    throw new PlsError(
+      `.pls/versions.json must hold an object. It looks like this: ${VERSIONS_SHAPE}`,
+      'INVALID_VERSIONS_MANIFEST',
+    );
+  }
+
+  const manifest: VersionsManifest = {};
+  for (const [key, value] of Object.entries(parsed)) {
+    if (typeof value === 'string') {
+      manifest[key] = { version: value };
+    } else if (typeof value === 'object' && value !== null) {
+      manifest[key] = value as VersionsManifest[string];
+    }
+  }
+
+  const version: unknown = manifest['.']?.version;
+  if (version !== undefined && typeof version !== 'string') {
+    throw new PlsError(
+      `.pls/versions.json holds ${JSON.stringify(version)} as the version. ` +
+        `It must be a string. The file looks like this: ${VERSIONS_SHAPE}`,
+      'INVALID_VERSIONS_MANIFEST',
+    );
+  }
+
+  return manifest;
+}
+
 /**
  * Update versions.json manifest.
  * Always uses object format: { ".": { "version": "x.y.z" } }

@@ -2,6 +2,8 @@
  * Semantic version parsing utilities.
  */
 
+import { PlsError } from './error.ts';
+
 export interface ParsedVersion {
   major: number;
   minor: number;
@@ -10,6 +12,19 @@ export interface ParsedVersion {
 }
 
 const SEMVER_REGEX = /^(\d+)\.(\d+)\.(\d+)(?:-([a-z]+)\.(\d+))?$/;
+
+/**
+ * The error for a version that parse() does not accept. The version a
+ * release starts from is read from .pls/versions.json, which people edit.
+ */
+function invalidVersion(version: string): PlsError {
+  return new PlsError(
+    `"${version}" is not a version pls can work with. ` +
+      `Use the form 1.2.3, or 1.2.3-alpha.0, 1.2.3-beta.0, 1.2.3-rc.0. ` +
+      `The current version is the one in .pls/versions.json.`,
+    'INVALID_VERSION',
+  );
+}
 
 /**
  * Parse a semver string into components.
@@ -61,7 +76,7 @@ export function bump(
 ): string {
   const parsed = parse(version);
   if (!parsed) {
-    throw new Error(`Invalid version: ${version}`);
+    throw invalidVersion(version);
   }
 
   // Strip prerelease for bumping
@@ -103,7 +118,7 @@ export function toPrerelease(
 ): string {
   const bumped = bump(version, bumpType);
   const parsed = parse(bumped);
-  if (!parsed) throw new Error(`Invalid version: ${bumped}`);
+  if (!parsed) throw invalidVersion(bumped);
   return format({ ...parsed, prerelease: `${stage}.0` });
 }
 
@@ -116,7 +131,7 @@ export function transition(
   target: 'alpha' | 'beta' | 'rc' | 'stable',
 ): string {
   const parsed = parse(version);
-  if (!parsed) throw new Error(`Invalid version: ${version}`);
+  if (!parsed) throw invalidVersion(version);
 
   const base = getBase(version);
 

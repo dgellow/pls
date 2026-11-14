@@ -8,7 +8,7 @@
  */
 
 import type { BranchSyncable, CodeHost, LocalRepo } from '../domain/vcs.ts';
-import type { VersionsManifest } from '../domain/types.ts';
+import { parseVersionsManifest } from '../domain/files.ts';
 import type { PlsConfig } from '../domain/config.ts';
 import { parseReleaseMetadata } from '../domain/release-metadata.ts';
 import { generateReleaseTagMessage } from '../domain/release-metadata.ts';
@@ -61,7 +61,7 @@ export async function releaseWorkflow(
     return { ...DEFAULT_RESULT };
   }
 
-  const versions: VersionsManifest = JSON.parse(versionsContent);
+  const versions = parseVersionsManifest(versionsContent);
   const version = versions['.']?.version;
   if (!version) {
     return { ...DEFAULT_RESULT };

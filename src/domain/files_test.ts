@@ -7,6 +7,7 @@ import { PlsError } from '../lib/error.ts';
 import {
   buildReleaseFiles,
   createInitialVersionsManifest,
+  parseVersionsManifest,
   prependChangelog,
   requireVersionFile,
   updateVersionFile,
@@ -77,6 +78,54 @@ Deno.test('updateVersionsManifest', async (t) => {
     const parsed = JSON.parse(result);
 
     assertEquals(parsed['.'].version, '2.0.0');
+  });
+});
+
+Deno.test('parseVersionsManifest', async (t) => {
+  await t.step('reads the object format', () => {
+    const manifest = parseVersionsManifest(
+      '{ ".": { "version": "1.2.3", "versionFile": "src/version.ts" } }',
+    );
+    assertEquals(manifest['.'], { version: '1.2.3', versionFile: 'src/version.ts' });
+  });
+
+  await t.step('reads an entry written as a bare string', () => {
+    assertEquals(parseVersionsManifest('{ ".": "1.2.3-beta.1" }')['.'], {
+      version: '1.2.3-beta.1',
+    });
+  });
+
+  await t.step('leaves a missing root entry to the caller', () => {
+    assertEquals(parseVersionsManifest('{}')['.'], undefined);
+    assertEquals(parseVersionsManifest('{ ".": {} }')['.']?.version, undefined);
+  });
+
+  await t.step('says what is wrong with a file that is not JSON', () => {
+    const error = assertThrows(() => parseVersionsManifest('{ not json'), PlsError);
+    assertEquals(error.code, 'INVALID_VERSIONS_MANIFEST');
+    assertEquals(error.message.includes('.pls/versions.json is not valid JSON'), true);
+    assertEquals(error.message.includes('{ ".": { "version": "1.2.3" } }'), true);
+  });
+
+  await t.step('refuses JSON that is not an object', () => {
+    for (const content of ['[]', '"1.2.3"', 'null', '42']) {
+      const error = assertThrows(
+        () => parseVersionsManifest(content),
+        PlsError,
+        undefined,
+        content,
+      );
+      assertEquals(error.code, 'INVALID_VERSIONS_MANIFEST', content);
+    }
+  });
+
+  await t.step('refuses a version that is not a string', () => {
+    const error = assertThrows(
+      () => parseVersionsManifest('{ ".": { "version": 123 } }'),
+      PlsError,
+    );
+    assertEquals(error.code, 'INVALID_VERSIONS_MANIFEST');
+    assertEquals(error.message.includes('holds 123 as the version'), true, error.message);
   });
 });
 
