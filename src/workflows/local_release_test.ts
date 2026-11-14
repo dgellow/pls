@@ -4,7 +4,8 @@
  * These tests create real git repositories and test end-to-end release flows.
  */
 
-import { assertEquals, assertStringIncludes } from '@std/assert';
+import { assertEquals, assertRejects, assertStringIncludes } from '@std/assert';
+import { PlsError } from '../lib/error.ts';
 import type { LocalGit } from '../clients/git/local.ts';
 import { localReleaseWorkflow, transitionWorkflow } from './local-release.ts';
 import { createTestRepo, run } from '../../tests/e2e/test_helpers.ts';
@@ -217,6 +218,59 @@ Deno.test('a release commits its own files only', async (t) => {
           status.split('\n').map((line) => line.trim()).sort(),
           ['?? .env', 'A  notes.md', 'M src/feature.ts'],
         );
+      } finally {
+        await cleanup();
+      }
+    });
+  }
+});
+
+Deno.test('a release with push', async (t) => {
+  await t.step('pushes the release commit and the tag', async () => {
+    const { dir, git, cleanup } = await createTestRepo();
+    const remote = await Deno.makeTempDir({ prefix: 'pls-test-remote-' });
+
+    try {
+      await run(remote, ['git', 'init', '--bare', '-b', 'main']);
+      await run(dir, ['git', 'remote', 'add', 'origin', remote]);
+      await setupVersionedRepo(git, '1.0.0');
+      await git.writeFile('src/feature.ts', 'export const a = 1;\n');
+      await git.commitAll('feat: add a');
+
+      const result = await localReleaseWorkflow(git, { dryRun: false, push: true });
+      assertEquals(result.tag, 'v1.1.0');
+
+      assertEquals(await run(remote, ['git', 'rev-parse', 'main']), await git.getHeadRevision());
+      assertEquals(await run(remote, ['git', 'tag']), 'v1.1.0');
+    } finally {
+      await cleanup();
+      await Deno.remove(remote, { recursive: true });
+    }
+  });
+
+  for (const kind of ['release', 'transition'] as const) {
+    await t.step(`${kind}: a failed push says that the release exists`, async () => {
+      // No remote: the push cannot work.
+      const { git, cleanup } = await createTestRepo();
+
+      try {
+        await setupVersionedRepo(git, '1.0.0');
+        await git.writeFile('src/feature.ts', 'export const a = 1;\n');
+        await git.commitAll('feat: add a');
+
+        const tag = kind === 'release' ? 'v1.1.0' : 'v1.1.0-alpha.0';
+        const error = await assertRejects(
+          () =>
+            kind === 'release'
+              ? localReleaseWorkflow(git, { dryRun: false, push: true })
+              : transitionWorkflow(git, 'alpha', 'minor', { dryRun: false, push: true }),
+          PlsError,
+        );
+        assertEquals(error.code, 'PUSH_FAILED');
+        assertStringIncludes(error.message, `Released ${tag} in this repository`);
+        assertStringIncludes(error.message, 'git push origin HEAD');
+        assertStringIncludes(error.message, `git push origin HEAD && git push origin ${tag}`);
+        assertEquals(await git.tagExists(tag), true);
       } finally {
         await cleanup();
       }

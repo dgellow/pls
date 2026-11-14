@@ -30,6 +30,26 @@ export interface LocalReleaseOptions {
 /**
  * Execute local release workflow.
  */
+/**
+ * Push the release commit and its tag. By now the release exists in the local
+ * repository, so a failed push must say that and how to finish, not only what
+ * git printed.
+ */
+async function pushRelease(repo: LocalRepo, tag: string): Promise<void> {
+  try {
+    await repo.push('HEAD');
+    await repo.push(tag);
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    throw new PlsError(
+      `Released ${tag} in this repository, but the push failed.\n${reason.trim()}\n` +
+        `The release commit and the tag ${tag} are in place: do not run the release again. ` +
+        `Fix the cause, then push them with: git push origin HEAD && git push origin ${tag}`,
+      'PUSH_FAILED',
+    );
+  }
+}
+
 export async function localReleaseWorkflow(
   repo: LocalRepo,
   options: LocalReleaseOptions,
@@ -137,8 +157,7 @@ export async function localReleaseWorkflow(
 
   // 9. Push if requested
   if (push) {
-    await repo.push('HEAD');
-    await repo.push(newTag);
+    await pushRelease(repo, newTag);
   }
 
   return {
@@ -241,8 +260,7 @@ export async function transitionWorkflow(
 
   // 7. Push if requested
   if (push) {
-    await repo.push('HEAD');
-    await repo.push(newTag);
+    await pushRelease(repo, newTag);
   }
 
   return {
