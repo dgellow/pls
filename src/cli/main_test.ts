@@ -129,6 +129,26 @@ Deno.test('cli: where it is started', async (t) => {
   }
 });
 
+Deno.test('cli: an error is printed once', async () => {
+  // A release with --push in a repository without a remote: git fails, and
+  // its output must appear one time, not again as a dump of the error's fields.
+  const { dir, cleanup } = await releasableRepo();
+
+  try {
+    const result = await pls(dir, ['--execute', '--push']);
+    assertEquals(result.code, 1, result.stdout);
+    assertEquals(
+      result.stderr.includes('❌ Released v1.3.0 in this repository'),
+      true,
+      result.stderr,
+    );
+    assertEquals(result.stderr.split("'origin' does not appear").length - 1, 1, result.stderr);
+    assertEquals(result.stderr.includes('Details:'), false, result.stderr);
+  } finally {
+    await cleanup();
+  }
+});
+
 Deno.test('cli: --json-output', async (t) => {
   const { dir, cleanup } = await releasableRepo();
 
