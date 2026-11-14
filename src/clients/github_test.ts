@@ -323,18 +323,17 @@ Deno.test('GitHub client: the API URL and the repository names are checked up fr
   });
 
   await t.step('does not echo credentials found in the URL', () => {
-    for (
-      const bad of [
-        'https://user:hunter2@github.example.com/api/v3',
-        'http://user:hunter2@github.example.com/api/v3',
-        'user:hunter2@github.example.com',
-      ]
-    ) {
+    const cases = [
+      ['https://user:hunter2@github.example.com/api/v3', 'https://***@github.example.com/api/v3'],
+      ['http://user:hunter2@github.example.com/api/v3', 'http://***@github.example.com/api/v3'],
+      ['user:hunter2@github.example.com', '***@github.example.com'],
+    ];
+    for (const [bad, shown] of cases) {
       const error = assertThrows(() => client(bad), PlsError);
       assertEquals(error.code, 'GITHUB_API_URL_INVALID');
+      assertEquals((error.details as { apiUrl: string }).apiUrl, shown);
+      assertEquals(error.message.includes(`"${shown}"`), true, error.message);
       assertEquals(error.message.includes('hunter2'), false, error.message);
-      assertEquals(JSON.stringify(error.details).includes('hunter2'), false);
-      assertEquals(error.message.includes('github.example.com'), true);
     }
   });
 
