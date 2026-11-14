@@ -129,6 +129,34 @@ Deno.test('cli: where it is started', async (t) => {
   }
 });
 
+Deno.test('cli: --json-output', async (t) => {
+  const { dir, cleanup } = await releasableRepo();
+
+  try {
+    await t.step('creates the directory of the file', async () => {
+      const result = await pls(dir, ['--json-output', 'out/deep/result.json']);
+      assertEquals(result.code, 0, result.stderr);
+      const written = JSON.parse(await Deno.readTextFile(`${dir}/out/deep/result.json`));
+      assertEquals(written.dryRun, true);
+      assertEquals(written.version, '1.3.0');
+    });
+
+    await t.step('says what happened when the file cannot be written', async () => {
+      // package.json is a file, so nothing can be written below it.
+      const result = await pls(dir, ['--json-output', 'package.json/result.json']);
+      assertEquals(result.code, 1, result.stdout);
+      assertEquals(
+        result.stderr.includes('❌ Could not write the JSON result to "package.json/result.json"'),
+        true,
+        result.stderr,
+      );
+      assertEquals(result.stderr.includes('The command itself has finished'), true, result.stderr);
+    });
+  } finally {
+    await cleanup();
+  }
+});
+
 Deno.test('cli: --execute on the commands that have no dry run', async (t) => {
   const { dir, cleanup } = await createTestRepo();
   try {
