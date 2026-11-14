@@ -61,7 +61,7 @@ Deno.test('LocalGit commit operations', async (t) => {
   try {
     await t.step('commit stages and commits changes', async () => {
       await git.writeFile('file.txt', 'content');
-      const rev = await git.commit('feat: initial commit');
+      const rev = await git.commitAll('feat: initial commit');
 
       // Revision should be 40 hex characters
       assertEquals(rev.length, 40);
@@ -83,10 +83,10 @@ Deno.test('LocalGit commit operations', async (t) => {
 
       // Create more commits
       await git.writeFile('file2.txt', 'content2');
-      await git.commit('fix: second commit');
+      await git.commitAll('fix: second commit');
 
       await git.writeFile('file3.txt', 'content3');
-      await git.commit('feat: third commit');
+      await git.commitAll('feat: third commit');
 
       const commits = await git.getCommitsSince(firstRev);
 
@@ -106,6 +106,44 @@ Deno.test('LocalGit commit operations', async (t) => {
   }
 });
 
+Deno.test('LocalGit commit takes the given paths and nothing else', async (t) => {
+  const { dir, git, cleanup } = await createTestRepo();
+
+  try {
+    await git.writeFile('tracked.txt', 'one\n');
+    await git.writeFile('other.txt', 'one\n');
+    await git.commitAll('chore: init');
+
+    // The working tree before the commit: one file to commit that git knows,
+    // one it does not know yet, and three things that are none of its business.
+    await git.writeFile('tracked.txt', 'two\n');
+    await git.writeFile('new/file.txt', 'new\n');
+    await git.writeFile('other.txt', 'modified, not staged\n');
+    await git.writeFile('staged.txt', 'staged by the user\n');
+    await run(dir, ['git', 'add', 'staged.txt']);
+    await git.writeFile('untracked.txt', 'untracked\n');
+
+    const rev = await git.commit('chore: release v1.0.0', ['tracked.txt', 'new/file.txt']);
+
+    await t.step('the commit holds the two paths', async () => {
+      assertEquals(rev, await git.getHeadRevision());
+      const changed = await run(dir, ['git', 'show', '--name-only', '--format=', 'HEAD']);
+      assertEquals(changed.split('\n').sort(), ['new/file.txt', 'tracked.txt']);
+    });
+
+    await t.step('the rest of the working tree is as it was', async () => {
+      // untracked, staged, modified and not staged
+      const status = await run(dir, ['git', 'status', '--porcelain']);
+      assertEquals(
+        status.split('\n').map((line) => line.trim()).sort(),
+        ['?? untracked.txt', 'A  staged.txt', 'M other.txt'],
+      );
+    });
+  } finally {
+    await cleanup();
+  }
+});
+
 // --- Tag Operations ---
 
 Deno.test('LocalGit tag operations', async (t) => {
@@ -114,7 +152,7 @@ Deno.test('LocalGit tag operations', async (t) => {
   try {
     // Create initial commit (required for tags)
     await git.writeFile('file.txt', 'content');
-    await git.commit('feat: initial');
+    await git.commitAll('feat: initial');
     const commitRev = await git.getHeadRevision();
 
     await t.step('createTag creates annotated tag', async () => {
@@ -156,7 +194,7 @@ Deno.test('LocalGit revision operations', async (t) => {
 
   try {
     await git.writeFile('file.txt', 'content');
-    await git.commit('feat: initial');
+    await git.commitAll('feat: initial');
     const rev = await git.getHeadRevision();
 
     await t.step('revExists returns true for valid revision', async () => {
@@ -189,12 +227,12 @@ Deno.test('LocalGit in a shallow clone', async (t) => {
 
   try {
     await upstream.writeFile('.pls/versions.json', '{"version": "1.0.0"}');
-    await upstream.commit('chore: release v1.0.0');
+    await upstream.commitAll('chore: release v1.0.0');
     const releaseRev = await upstream.getHeadRevision();
     await upstream.writeFile('a.txt', 'a');
-    await upstream.commit('feat: add export command');
+    await upstream.commitAll('feat: add export command');
     await upstream.writeFile('b.txt', 'b');
-    await upstream.commit('fix: handle empty input');
+    await upstream.commitAll('fix: handle empty input');
 
     await t.step('getCommitsSince fetches the history instead of finding nothing', async () => {
       const dir = await shallowClone();
@@ -239,16 +277,16 @@ Deno.test('LocalGit getCommitsSince up to a given commit', async (t) => {
 
   try {
     await upstream.writeFile('a.txt', 'a');
-    await upstream.commit('chore: release v1.0.0');
+    await upstream.commitAll('chore: release v1.0.0');
     const releaseRev = await upstream.getHeadRevision();
     await upstream.writeFile('b.txt', 'b');
-    await upstream.commit('feat: add export command');
+    await upstream.commitAll('feat: add export command');
     const first = await upstream.getHeadRevision();
 
     // Clone now, then the upstream branch moves on.
     await run(clone, ['git', 'clone', '--quiet', `file://${origin}`, '.']);
     await upstream.writeFile('c.txt', 'c');
-    await upstream.commit('fix: handle empty input');
+    await upstream.commitAll('fix: handle empty input');
     const second = await upstream.getHeadRevision();
     const local = new LocalGit(clone);
 
@@ -289,7 +327,7 @@ Deno.test('LocalGit getCommitsSince', async (t) => {
     });
 
     await git.writeFile('file.txt', 'content');
-    await git.commit('feat: initial');
+    await git.commitAll('feat: initial');
 
     await t.step(
       'a revision that is not in the history is an error, not "no changes"',
@@ -316,12 +354,12 @@ Deno.test('LocalGit findCommitByContent', async (t) => {
   try {
     // Create file with version
     await git.writeFile('.pls/versions.json', '{"version": "1.0.0"}');
-    await git.commit('chore: release v1.0.0');
+    await git.commitAll('chore: release v1.0.0');
     const releaseRev = await git.getHeadRevision();
 
     // Create more commits
     await git.writeFile('other.txt', 'unrelated');
-    await git.commit('feat: other change');
+    await git.commitAll('feat: other change');
 
     await t.step('finds commit that introduced string', async () => {
       const rev = await git.findCommitByContent('"version": "1.0.0"', '.pls/versions.json');
@@ -344,7 +382,7 @@ Deno.test('LocalGit branch operations', async (t) => {
 
   try {
     await git.writeFile('file.txt', 'content');
-    await git.commit('feat: initial');
+    await git.commitAll('feat: initial');
 
     await t.step('getCurrentBranch returns branch name', async () => {
       const branch = await git.getCurrentBranch();
@@ -370,7 +408,7 @@ Deno.test('LocalGit error handling', async (t) => {
     await t.step('commit with no changes throws PlsError', async () => {
       await assertRejects(
         async () => {
-          await git.commit('empty commit');
+          await git.commitAll('empty commit');
         },
         PlsError,
         'Git command failed',
@@ -405,7 +443,7 @@ Deno.test('LocalGit parses conventional commits', async (t) => {
   try {
     await t.step('parses type, scope, and description', async () => {
       await git.writeFile('file.txt', 'content');
-      await git.commit('feat(api): add new endpoint');
+      await git.commitAll('feat(api): add new endpoint');
 
       const commits = await git.getCommitsSince(null);
       assertEquals(commits.length, 1);
@@ -416,7 +454,7 @@ Deno.test('LocalGit parses conventional commits', async (t) => {
 
     await t.step('parses breaking change indicator', async () => {
       await git.writeFile('file2.txt', 'content');
-      await git.commit('feat!: breaking change');
+      await git.commitAll('feat!: breaking change');
 
       const commits = await git.getCommitsSince(null);
       const breaking = commits.find((c) => c.breaking);
@@ -426,7 +464,7 @@ Deno.test('LocalGit parses conventional commits', async (t) => {
 
     await t.step('parses BREAKING CHANGE footer', async () => {
       await git.writeFile('file3.txt', 'content');
-      await git.commit('feat: normal commit\n\nBREAKING CHANGE: this breaks things');
+      await git.commitAll('feat: normal commit\n\nBREAKING CHANGE: this breaks things');
 
       const commits = await git.getCommitsSince(null);
       const breaking = commits.find((c) => c.description === 'normal commit');

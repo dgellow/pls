@@ -109,11 +109,11 @@ Deno.test('e2e: prep workflow — version recalculation on re-run', async (t) =>
       'deno.json',
       JSON.stringify({ name: '@test/app', version: '0.3.0' }, null, 2) + '\n',
     );
-    await git.commit('chore: initial project');
+    await git.commitAll('chore: initial project');
 
     // Init pls at 0.3.0
     await initWorkflow(git, { dryRun: false });
-    await git.commit('chore: initialize pls');
+    await git.commitAll('chore: initialize pls');
 
     // Read initial files for the mock host
     const versionsJson = await git.readFile('.pls/versions.json');
@@ -129,7 +129,7 @@ Deno.test('e2e: prep workflow — version recalculation on re-run', async (t) =>
     await t.step('first prep with feat! on pre-1.0 produces 0.4.0 minor', async () => {
       // Add breaking feature commit — but on pre-1.0, breaking bumps minor
       await git.writeFile('src/app.ts', 'export class App {}\n');
-      await git.commit('feat!: redesign API');
+      await git.commitAll('feat!: redesign API');
 
       const result = await prepWorkflow(git, host, {
         baseBranch: 'main',
@@ -189,10 +189,10 @@ Deno.test('e2e: prep workflow — unchanged commits preserve version', async (t)
       'deno.json',
       JSON.stringify({ name: '@test/app', version: '1.0.0' }, null, 2) + '\n',
     );
-    await git.commit('chore: initial project');
+    await git.commitAll('chore: initial project');
 
     await initWorkflow(git, { dryRun: false });
-    await git.commit('chore: initialize pls');
+    await git.commitAll('chore: initialize pls');
 
     const versionsJson = await git.readFile('.pls/versions.json');
     const initialFiles = new Map<string, string>();
@@ -203,7 +203,7 @@ Deno.test('e2e: prep workflow — unchanged commits preserve version', async (t)
 
     await t.step('first prep with feat → 1.1.0 minor', async () => {
       await git.writeFile('src/feature.ts', 'export function hello() {}\n');
-      await git.commit('feat: add greeting');
+      await git.commitAll('feat: add greeting');
 
       const result = await prepWorkflow(git, host, {
         baseBranch: 'main',
@@ -242,10 +242,10 @@ Deno.test('e2e: prep workflow — respects explicit user version selection', asy
       'deno.json',
       JSON.stringify({ name: '@test/app', version: '1.0.0' }, null, 2) + '\n',
     );
-    await git.commit('chore: initial project');
+    await git.commitAll('chore: initial project');
 
     await initWorkflow(git, { dryRun: false });
-    await git.commit('chore: initialize pls');
+    await git.commitAll('chore: initialize pls');
 
     const versionsJson = await git.readFile('.pls/versions.json');
     const initialFiles = new Map<string, string>();
@@ -256,7 +256,7 @@ Deno.test('e2e: prep workflow — respects explicit user version selection', asy
 
     await t.step('first prep → 1.1.0 minor', async () => {
       await git.writeFile('src/feature.ts', 'export function hello() {}\n');
-      await git.commit('feat: add greeting');
+      await git.commitAll('feat: add greeting');
 
       const result = await prepWorkflow(git, host, {
         baseBranch: 'main',
@@ -298,7 +298,7 @@ Deno.test('e2e: prep workflow — respects explicit user version selection', asy
       assertStringIncludes(getPR()!.body, '<!-- pls:v:1.1.0-alpha.0:transition:current:chosen -->');
 
       await git.writeFile('src/fix.ts', 'export const fixed = true;\n');
-      await git.commit('fix: handle empty input');
+      await git.commitAll('fix: handle empty input');
 
       const result = await prepWorkflow(git, host, {
         baseBranch: 'main',
@@ -357,10 +357,10 @@ Deno.test('e2e: prep workflow — type matches actual version transition', async
       'deno.json',
       JSON.stringify({ name: '@test/app', version: '0.3.0' }, null, 2) + '\n',
     );
-    await git.commit('chore: initial project');
+    await git.commitAll('chore: initial project');
 
     await initWorkflow(git, { dryRun: false });
-    await git.commit('chore: initialize pls');
+    await git.commitAll('chore: initialize pls');
 
     const versionsJson = await git.readFile('.pls/versions.json');
     const initialFiles = new Map<string, string>();
@@ -374,7 +374,7 @@ Deno.test('e2e: prep workflow — type matches actual version transition', async
 
     await t.step('feat! on 0.3.0 → type should be minor, version 0.4.0', async () => {
       await git.writeFile('src/app.ts', 'export class App {}\n');
-      await git.commit('feat!: breaking change');
+      await git.commitAll('feat!: breaking change');
 
       const result = await prepWorkflow(git, host, {
         baseBranch: 'main',
