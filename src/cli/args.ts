@@ -20,6 +20,16 @@ export function rejectUnknownOptions(command: string): (arg: string, key?: strin
   return (arg: string, key?: string): boolean => {
     if (key === undefined || key === null) return true;
 
+    // The parser reads `--base=` as an option named "base=".
+    if (key.endsWith('=')) {
+      const name = arg.slice(0, -1);
+      throw new PlsError(
+        `Option "${name}" has no value. Write ${name}=<value>, or leave the option out. ` +
+          `Run \`${command} --help\` to see what it takes.`,
+        'MISSING_OPTION_VALUE',
+      );
+    }
+
     throw new PlsError(
       `Unknown option "${arg}" for \`${command}\`. ` +
         `Run \`${command} --help\` to see the options it takes.`,
