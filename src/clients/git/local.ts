@@ -196,14 +196,23 @@ export class LocalGit implements LocalRepo, BranchSyncable, RemoteDetectable {
     await runtime.writeTextFile(fullPath, content);
   }
 
-  async commit(message: string): Promise<string> {
-    // Stage all changes
-    await this.exec(['add', '-A']);
+  async commit(message: string, paths: string[]): Promise<string> {
+    // `add` so that files git does not know yet are included. `--only` so
+    // that the commit holds these paths and not what else is in the index.
+    await this.exec(['add', '--', ...paths]);
+    await this.exec(['commit', '-m', message, '--only', '--', ...paths]);
 
-    // Commit
+    return await this.getHeadRevision();
+  }
+
+  /**
+   * Commit everything in the working tree, untracked files included. Not part
+   * of LocalRepo: a release never does this. Tests build repositories with it.
+   */
+  async commitAll(message: string): Promise<string> {
+    await this.exec(['add', '-A']);
     await this.exec(['commit', '-m', message]);
 
-    // Return new HEAD revision
     return await this.getHeadRevision();
   }
 

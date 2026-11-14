@@ -125,7 +125,7 @@ export async function localReleaseWorkflow(
   }
 
   // 7. Commit
-  await repo.commit(commitMessage);
+  await repo.commit(commitMessage, [...files.keys()]);
 
   // 8. Create tag
   const newTag = `v${bump.to}`;
@@ -229,7 +229,7 @@ export async function transitionWorkflow(
   }
 
   // 5. Commit
-  await repo.commit(commitMessage);
+  await repo.commit(commitMessage, [...files.keys()]);
 
   // 6. Create tag
   const newTag = `v${to}`;

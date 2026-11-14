@@ -30,7 +30,7 @@ Deno.test('e2e: Deno project — full release cycle', async (t) => {
       'src/version.ts',
       '// @pls-version\nexport const VERSION = "1.0.0";\n',
     );
-    await git.commit('chore: initial project');
+    await git.commitAll('chore: initial project');
 
     await t.step('init detects version from deno.json', async (t) => {
       const result = await initWorkflow(git, {
@@ -50,12 +50,12 @@ Deno.test('e2e: Deno project — full release cycle', async (t) => {
     });
 
     // Commit init files (initWorkflow writes but doesn't commit)
-    await git.commit('chore: initialize pls');
+    await git.commitAll('chore: initialize pls');
 
     await t.step('release after feat commit bumps minor', async (t) => {
       // Add a feature
       await git.writeFile('src/greeting.ts', 'export function hello() { return "hi"; }\n');
-      await git.commit('feat: add greeting');
+      await git.commitAll('feat: add greeting');
 
       const result = await localReleaseWorkflow(git, { dryRun: false, push: false });
 
@@ -86,7 +86,7 @@ Deno.test('e2e: Deno project — full release cycle', async (t) => {
 
     await t.step('second release after fix commit bumps patch', async (t) => {
       await git.writeFile('src/greeting.ts', 'export function hello() { return "hello"; }\n');
-      await git.commit('fix: correct greeting message');
+      await git.commitAll('fix: correct greeting message');
 
       const result = await localReleaseWorkflow(git, { dryRun: false, push: false });
 
@@ -133,7 +133,7 @@ Deno.test('e2e: Node project — full release cycle', async (t) => {
       'src/version.ts',
       '// @pls-version\nexport const VERSION = "2.0.0";\n',
     );
-    await git.commit('chore: initial project');
+    await git.commitAll('chore: initial project');
 
     await t.step('init detects version from package.json', async (t) => {
       const result = await initWorkflow(git, {
@@ -150,11 +150,11 @@ Deno.test('e2e: Node project — full release cycle', async (t) => {
       });
     });
 
-    await git.commit('chore: initialize pls');
+    await git.commitAll('chore: initialize pls');
 
     await t.step('release after fix commit bumps patch', async (t) => {
       await git.writeFile('src/bug.ts', 'export function fixed() {}\n');
-      await git.commit('fix: resolve crash on startup');
+      await git.commitAll('fix: resolve crash on startup');
 
       const result = await localReleaseWorkflow(git, { dryRun: false, push: false });
 
@@ -182,7 +182,7 @@ Deno.test('e2e: Node project — full release cycle', async (t) => {
 
     await t.step('second release after feat commit bumps minor', async (t) => {
       await git.writeFile('src/feature.ts', 'export function newFeature() {}\n');
-      await git.commit('feat: add new feature');
+      await git.commitAll('feat: add new feature');
 
       const result = await localReleaseWorkflow(git, { dryRun: false, push: false });
 
@@ -232,7 +232,7 @@ Deno.test('e2e: Go project — full release cycle', async (t) => {
       'cmd/app/main.go',
       'package main\n\nimport "fmt"\n\nfunc main() {\n\tfmt.Println("hello")\n}\n',
     );
-    await git.commit('chore: initial project');
+    await git.commitAll('chore: initial project');
 
     await t.step('init without --version fails for Go', async () => {
       await assertRejects(
@@ -257,14 +257,14 @@ Deno.test('e2e: Go project — full release cycle', async (t) => {
       });
     });
 
-    await git.commit('chore: initialize pls');
+    await git.commitAll('chore: initialize pls');
 
     await t.step('release updates version file but not go.mod', async (t) => {
       await git.writeFile('internal/client.go', 'package internal\n\ntype Client struct{}\n');
-      await git.commit('feat: add HTTP client');
+      await git.commitAll('feat: add HTTP client');
 
       await git.writeFile('internal/handler.go', 'package internal\n\nfunc Handle() {}\n');
-      await git.commit('fix: handle edge case');
+      await git.commitAll('fix: handle edge case');
 
       const result = await localReleaseWorkflow(git, { dryRun: false, push: false });
 
@@ -294,7 +294,7 @@ Deno.test('e2e: Go project — full release cycle', async (t) => {
         'internal/handler.go',
         'package internal\n\nfunc Handle() error { return nil }\n',
       );
-      await git.commit('fix: return error from handler');
+      await git.commitAll('fix: return error from handler');
 
       const result = await localReleaseWorkflow(git, { dryRun: false, push: false });
 
@@ -353,7 +353,7 @@ Deno.test('e2e: Python/uv project — full release cycle', async (t) => {
     );
     await git.writeFile('src/mypackage/__init__.py', 'from ._version import __version__\n');
     await git.writeFile('src/mypackage/core.py', 'def run() -> None:\n    pass\n');
-    await git.commit('chore: initial project');
+    await git.commitAll('chore: initial project');
 
     await t.step('init without --version fails (no recognized manifest)', async () => {
       await assertRejects(
@@ -382,11 +382,11 @@ Deno.test('e2e: Python/uv project — full release cycle', async (t) => {
       });
     });
 
-    await git.commit('chore: initialize pls');
+    await git.commitAll('chore: initialize pls');
 
     await t.step('release updates version file, pyproject.toml unchanged', async (t) => {
       await git.writeFile('src/mypackage/feature.py', 'def new_feature() -> None:\n    pass\n');
-      await git.commit('feat: add new feature');
+      await git.commitAll('feat: add new feature');
 
       const result = await localReleaseWorkflow(git, { dryRun: false, push: false });
 
@@ -416,7 +416,7 @@ Deno.test('e2e: Python/uv project — full release cycle', async (t) => {
         'src/mypackage/feature.py',
         'def new_feature() -> str:\n    return "fixed"\n',
       );
-      await git.commit('fix: correct feature return type');
+      await git.commitAll('fix: correct feature return type');
 
       const result = await localReleaseWorkflow(git, { dryRun: false, push: false });
 
@@ -467,7 +467,7 @@ Deno.test('e2e: Multi-manifest project — both deno.json and package.json updat
       'src/version.ts',
       '// @pls-version\nexport const VERSION = "3.0.0";\n',
     );
-    await git.commit('chore: initial project');
+    await git.commitAll('chore: initial project');
 
     await t.step('init detects version from deno.json (priority)', async () => {
       const result = await initWorkflow(git, {
@@ -478,11 +478,11 @@ Deno.test('e2e: Multi-manifest project — both deno.json and package.json updat
       assertEquals(result.version, '3.0.0');
     });
 
-    await git.commit('chore: initialize pls');
+    await git.commitAll('chore: initialize pls');
 
     await t.step('release updates both manifests', async (t) => {
       await git.writeFile('src/feature.ts', 'export const x = 1;\n');
-      await git.commit('feat!: breaking redesign');
+      await git.commitAll('feat!: breaking redesign');
 
       const result = await localReleaseWorkflow(git, { dryRun: false, push: false });
 
@@ -513,7 +513,7 @@ Deno.test('e2e: Multi-manifest project — both deno.json and package.json updat
 
     await t.step('second release after feat commit bumps minor', async (t) => {
       await git.writeFile('src/utils.ts', 'export function helper() { return true; }\n');
-      await git.commit('feat: add utility helpers');
+      await git.commitAll('feat: add utility helpers');
 
       const result = await localReleaseWorkflow(git, { dryRun: false, push: false });
 

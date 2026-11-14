@@ -38,7 +38,11 @@ export interface LocalRepo {
   getTagRevision(tag: string): Promise<RevisionId | null>;
   getTagMessage(tag: string): Promise<string | null>;
   createTag(name: string, message: string): Promise<void>;
-  commit(message: string): Promise<RevisionId>;
+  /**
+   * Commit `paths` as they are in the working tree, and nothing else:
+   * whatever else is modified, staged or untracked stays out of the commit.
+   */
+  commit(message: string, paths: string[]): Promise<RevisionId>;
   push(ref: string): Promise<void>;
   findCommitByContent(searchString: string, filePath: string): Promise<RevisionId | null>;
 }

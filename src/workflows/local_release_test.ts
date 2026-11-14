@@ -5,15 +5,15 @@
  */
 
 import { assertEquals, assertStringIncludes } from '@std/assert';
-import type { LocalRepo } from '../domain/vcs.ts';
+import type { LocalGit } from '../clients/git/local.ts';
 import { localReleaseWorkflow, transitionWorkflow } from './local-release.ts';
-import { createTestRepo } from '../../tests/e2e/test_helpers.ts';
+import { createTestRepo, run } from '../../tests/e2e/test_helpers.ts';
 
 /**
  * Set up a repo with initial version and tag.
  */
 async function setupVersionedRepo(
-  repo: LocalRepo,
+  repo: LocalGit,
   version: string,
 ): Promise<void> {
   // Create versions.json
@@ -23,7 +23,7 @@ async function setupVersionedRepo(
   );
 
   // Create initial commit
-  await repo.commit(`chore: init v${version}`);
+  await repo.commitAll(`chore: init v${version}`);
 
   // Create initial tag
   await repo.createTag(`v${version}`, `Release ${version}`);
@@ -59,7 +59,7 @@ Deno.test('localReleaseWorkflow', async (t) => {
 
       // Add a fix commit
       await git.writeFile('src/fix.ts', 'fixed code');
-      await git.commit('fix: correct off-by-one error');
+      await git.commitAll('fix: correct off-by-one error');
 
       const result = await localReleaseWorkflow(git, {
         dryRun: true,
@@ -86,10 +86,10 @@ Deno.test('localReleaseWorkflow', async (t) => {
 
       // Add feature commits
       await git.writeFile('src/feature.ts', 'new feature');
-      await git.commit('feat: add new feature');
+      await git.commitAll('feat: add new feature');
 
       await git.writeFile('src/fix.ts', 'fix');
-      await git.commit('fix: small fix');
+      await git.commitAll('fix: small fix');
 
       const result = await localReleaseWorkflow(git, {
         dryRun: true,
@@ -111,7 +111,7 @@ Deno.test('localReleaseWorkflow', async (t) => {
 
       // Add breaking change
       await git.writeFile('src/api.ts', 'breaking api');
-      await git.commit('feat!: redesign API');
+      await git.commitAll('feat!: redesign API');
 
       const result = await localReleaseWorkflow(git, {
         dryRun: true,
@@ -133,7 +133,7 @@ Deno.test('localReleaseWorkflow', async (t) => {
 
       // Add feature
       await git.writeFile('src/feature.ts', 'new feature');
-      await git.commit('feat: add awesome feature');
+      await git.commitAll('feat: add awesome feature');
 
       const result = await localReleaseWorkflow(git, {
         dryRun: false,
@@ -168,7 +168,7 @@ Deno.test('localReleaseWorkflow', async (t) => {
       await setupVersionedRepo(git, '1.0.0');
 
       await git.writeFile('src/api.ts', 'new api');
-      await git.commit('feat!: new authentication system');
+      await git.commitAll('feat!: new authentication system');
 
       const result = await localReleaseWorkflow(git, {
         dryRun: false,
@@ -186,6 +186,43 @@ Deno.test('localReleaseWorkflow', async (t) => {
 });
 
 // --- Transition Workflow ---
+
+Deno.test('a release commits its own files only', async (t) => {
+  for (const kind of ['release', 'transition'] as const) {
+    await t.step(kind, async () => {
+      const { dir, git, cleanup } = await createTestRepo();
+
+      try {
+        await setupVersionedRepo(git, '1.0.0');
+        await git.writeFile('src/feature.ts', 'export const a = 1;\n');
+        await git.commitAll('feat: add a');
+
+        // Work in progress that has nothing to do with the release.
+        await git.writeFile('src/feature.ts', 'export const a = 2;\n');
+        await git.writeFile('.env', 'TOKEN=secret\n');
+        await git.writeFile('notes.md', 'staged\n');
+        await run(dir, ['git', 'add', 'notes.md']);
+
+        const result = kind === 'release'
+          ? await localReleaseWorkflow(git, { dryRun: false, push: false })
+          : await transitionWorkflow(git, 'alpha', 'minor', { dryRun: false, push: false });
+        assertEquals(result.released, true);
+
+        const changed = await run(dir, ['git', 'show', '--name-only', '--format=', 'HEAD']);
+        assertEquals(changed.split('\n').sort(), ['.pls/versions.json', 'CHANGELOG.md']);
+
+        // untracked, staged, modified and not staged
+        const status = await run(dir, ['git', 'status', '--porcelain']);
+        assertEquals(
+          status.split('\n').map((line) => line.trim()).sort(),
+          ['?? .env', 'A  notes.md', 'M src/feature.ts'],
+        );
+      } finally {
+        await cleanup();
+      }
+    });
+  }
+});
 
 Deno.test('transitionWorkflow', async (t) => {
   await t.step('transitions stable to alpha', async () => {
@@ -346,12 +383,12 @@ Deno.test('workflow syncs TypeScript version file', async (t) => {
         '// @pls-version\nexport const VERSION = "1.0.0";\n',
       );
 
-      await git.commit('chore: init v1.0.0');
+      await git.commitAll('chore: init v1.0.0');
       await git.createTag('v1.0.0', 'Release 1.0.0');
 
       // Add a feature
       await git.writeFile('src/feature.ts', 'feature');
-      await git.commit('feat: new feature');
+      await git.commitAll('feat: new feature');
 
       const result = await localReleaseWorkflow(git, {
         dryRun: false,
