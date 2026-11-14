@@ -197,10 +197,25 @@ export class LocalGit implements LocalRepo, BranchSyncable, RemoteDetectable {
   }
 
   async commit(message: string, paths: string[]): Promise<string> {
+    // A path the repository ignores stays out of the commit, as it does with
+    // any `git add`. check-ignore prints the ignored ones, one per line, and
+    // fails when there are none.
+    const ignored = await this.execSafe(['check-ignore', '--', ...paths]);
+    const skipped = new Set((ignored ?? '').split('\n').filter(Boolean));
+    const included = paths.filter((path) => !skipped.has(path));
+    if (included.length === 0) {
+      throw new PlsError(
+        `Nothing to commit: every file of this commit is ignored by .gitignore ` +
+          `(${paths.join(', ')}). Remove them from .gitignore, then run the command again.`,
+        'NOTHING_TO_COMMIT',
+        { paths },
+      );
+    }
+
     // `add` so that files git does not know yet are included. `--only` so
     // that the commit holds these paths and not what else is in the index.
-    await this.exec(['add', '--', ...paths]);
-    await this.exec(['commit', '-m', message, '--only', '--', ...paths]);
+    await this.exec(['add', '--', ...included]);
+    await this.exec(['commit', '-m', message, '--only', '--', ...included]);
 
     return await this.getHeadRevision();
   }
