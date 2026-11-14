@@ -49,7 +49,7 @@ jobs:
 
       - uses: denoland/setup-deno@v2
         with:
-          deno-version: v2.6.x
+          deno-version: v2.9.x
           cache: true
 
       # The other tools are Node programs. 22 is the version their verdicts were established on.
@@ -96,7 +96,7 @@ jobs:
 
       - uses: denoland/setup-deno@v2
         with:
-          deno-version: v2.6.x
+          deno-version: v2.9.x
           cache: true
 
       - uses: actions/download-artifact@v4
