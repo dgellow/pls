@@ -193,7 +193,7 @@ Common error scenarios to handle explicitly:
 - No git repository found → "Run this command from a git repository"
 - No commits since last release → "No changes to release (last release: v1.2.3)"
 - GitHub token missing → "Set GITHUB_TOKEN env var or use --token flag"
-- Network failure → "GitHub API unreachable. Check your connection or use --storage=local"
+- Network failure → "GitHub API unreachable: … Check your connection, then run the command again."
 - Invalid semver → "Version 'x.y' is not valid semver. Use format: major.minor.patch"
 
 ### Data Formats
@@ -244,68 +244,48 @@ function calculateBump(commits: Commit[]): BumpType | null {
 Every module needs tests. Test files live next to implementation: `foo.ts` → `foo_test.ts`
 
 ```bash
-./scripts/test            # Run all tests
-deno test -A src/core/    # Run specific directory
+./scripts/test                # Run all tests
+./scripts/test src/domain/    # Run the tests of one directory
 ```
 
 Test patterns:
 
 - Unit tests for pure logic (version calculation, commit parsing)
 - Integration tests with temp directories for file operations
-- Mock external APIs (GitHub) for storage tests
+- A local HTTP server in place of the GitHub API for client tests (`src/clients/github_test.ts`)
 
 ## CLI Output Reference
 
-### Successful Release
+### Dry Run With Changes
 
 ```
-pls
+📦 pls
 
-Storage: github
-Last release: v1.2.2 (abc1234)
+Version: 1.2.2 → 1.3.0 (minor)
+Commits: 2
 
-Detecting changes...
-Found 5 commits
-
-Version bump: 1.2.2 -> 1.2.3 (patch)
-
-DRY RUN (use --execute to create release)
-
-Dry run - would create release:
-  Version: 1.2.3
-  Tag: v1.2.3
-  SHA: def5678
+DRY RUN — use --execute to apply changes
 ```
 
 ### No Changes
 
 ```
-pls
+📦 pls
 
-Storage: local
-Last release: v1.2.3 (abc1234)
-
-Detecting changes...
-No changes detected since last release
+⚠️  No changes to release
 ```
 
 ### Error State
 
 ```
-pls --storage=github
+📦 pls prep
 
-Storage: github
-
-Error: GitHub token required for github storage
-  Set GITHUB_TOKEN environment variable or use --token flag
-
-  Example:
-    export GITHUB_TOKEN=ghp_xxxx
-    pls --storage=github
-
-  Or use local storage:
-    pls --storage=local
+Repository: acme/demo
+Base branch: main
+❌ GitHub token required. Set GITHUB_TOKEN env var or use --token
 ```
+
+The command exits with code 1.
 
 ## Development Commands
 
@@ -317,9 +297,9 @@ directly.**
 ./scripts/bootstrap         # Install deno if needed, cache dependencies
 
 # Run CLI
-deno run -A src/cli.ts
-deno run -A src/cli.ts --help
-deno run -A src/cli.ts pr --execute
+deno run -A src/cli/main.ts
+deno run -A src/cli/main.ts --help
+deno run -A src/cli/main.ts prep --execute
 
 # Quality checks - USE THESE SCRIPTS, NOT RAW DENO COMMANDS
 ./scripts/format            # Format code (NOT deno fmt)
@@ -356,10 +336,10 @@ encounter SSL certificate errors like `UnknownIssuer`. To bypass:
 
 ```bash
 # Option 1: Ignore certificate errors (development only!)
-deno run -A --unsafely-ignore-certificate-errors src/cli.ts pr --owner=dgellow --repo=pls
+deno run -A --unsafely-ignore-certificate-errors src/cli/main.ts prep --owner=dgellow --repo=pls
 
 # Option 2: Set environment variable
-DENO_TLS_CA_STORE=system deno run -A src/cli.ts pr
+DENO_TLS_CA_STORE=system deno run -A src/cli/main.ts prep
 ```
 
 **IMPORTANT for Claude/AI agents**: When running commands that make HTTPS requests and you see
@@ -368,16 +348,16 @@ the certificate error as a failure - bypass it and continue testing.
 
 ## Decision Log
 
-| Decision                   | Rationale                                                   |
-| -------------------------- | ----------------------------------------------------------- |
-| Deno over Node             | ESM-first, built-in TypeScript, better tooling              |
-| Storage abstraction        | Enables offline mode, testing, different backends           |
-| No config files            | Complexity without benefit for MVP; convention over config  |
-| Structured commit metadata | Reliability over fragile regex parsing                      |
-| Git CLI for local ops      | More reliable than libgit2 bindings; GitHub API for remote  |
-| Dry-run by default         | Safety first; explicit --execute required for mutations     |
-| `@pls-version` marker      | One mechanism for all languages; no format-specific parsers |
-| manifest.ts self-contained | Zero circular deps; adding ecosystems touches one file      |
+| Decision                   | Rationale                                                       |
+| -------------------------- | --------------------------------------------------------------- |
+| Deno over Node             | ESM-first, built-in TypeScript, better tooling                  |
+| VCS interfaces             | Workflows run against LocalRepo and CodeHost, not git or GitHub |
+| No config files            | Complexity without benefit for MVP; convention over config      |
+| Structured commit metadata | Reliability over fragile regex parsing                          |
+| Git CLI for local ops      | More reliable than libgit2 bindings; GitHub API for remote      |
+| Dry-run by default         | Safety first; explicit --execute required for mutations         |
+| `@pls-version` marker      | One mechanism for all languages; no format-specific parsers     |
+| manifest.ts self-contained | Zero circular deps; adding ecosystems touches one file          |
 
 ## Anti-Patterns (Do Not Do These)
 
@@ -400,7 +380,7 @@ Before implementing:
 - [ ] Does this serve the user's actual workflow?
 - [ ] Can I explain it in one sentence?
 - [ ] What error states are possible? How will I communicate them?
-- [ ] Does it work offline / with --storage=local?
+- [ ] Does the local flow (`pls`, without GitHub) still work?
 - [ ] Is it backwards compatible?
 - [ ] Did I add tests for happy path AND error cases?
 
