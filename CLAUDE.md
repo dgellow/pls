@@ -140,7 +140,7 @@ Defined in `domain/vcs.ts`. Workflows depend on these interfaces, never on concr
 interface LocalRepo {
   readFile(path: string): Promise<string | null>;
   getCommitsSince(rev: RevisionId | null): Promise<Commit[]>;
-  commit(message: string): Promise<RevisionId>;
+  commit(message: string, paths: string[]): Promise<RevisionId>;
   createTag(name: string, message: string): Promise<void>;
   // ... see domain/vcs.ts for full interface
 }
