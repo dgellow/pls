@@ -19,7 +19,10 @@ export interface GitHubClientOptions {
   owner: string;
   repo: string;
   token: string;
-  /** REST API base URL. Defaults to github.com's API; set for GitHub Enterprise Server. */
+  /**
+   * REST API base URL: github.com's API (the default), or a server on this
+   * machine for tests. See resolveApiUrl.
+   */
   apiUrl?: string;
   /** How long to wait for one request, in milliseconds. Defaults to 15 s. */
   requestTimeoutMs?: number;
@@ -56,45 +59,56 @@ const DEFAULT_API_URL = 'https://api.github.com';
 /** Owner and repository names as GitHub allows them. "." and ".." are path segments, not names. */
 const REPO_NAME_PART = /^(?!\.{1,2}$)[A-Za-z0-9_.-]+$/;
 
+/** Loopback hosts a local test server may listen on. */
+const LOOPBACK_HOSTS = ['127.0.0.1', 'localhost', '[::1]'] as const;
+
 /**
- * Check the API base URL before any request is made. Every request carries the
- * token, so the URL must be one the token may be sent to: https, or plain http
- * on this machine (local test servers). Returns the URL without a trailing slash.
+ * The API base URL requests go to. Every request carries the token, so the
+ * host is never taken from configuration: it is github.com's API, or a server
+ * on this machine (the test suite and the simulator run one).
+ *
+ * `apiUrl` only selects between those. For a local server the URL is built
+ * here from a fixed host name and the port number; nothing else of the value
+ * is used. GitHub Enterprise Server is not supported.
  */
 export function resolveApiUrl(apiUrl: string | undefined): string {
   if (!apiUrl) return DEFAULT_API_URL;
+  if (apiUrl.replace(/\/+$/, '') === DEFAULT_API_URL) return DEFAULT_API_URL;
+
+  const local = localServerUrl(apiUrl);
+  if (local) return local;
 
   // The value is echoed in the error. Credentials in it must not be.
   const shown = apiUrl.replace(/(^|\/\/)[^/@\s]*@/, '$1***@');
-  const invalid = (reason: string): PlsError =>
-    new PlsError(
-      `GitHub API URL "${shown}" cannot be used: ${reason}.\n` +
-        `It comes from the GITHUB_API_URL environment variable. Unset it to use github.com, ` +
-        `or set it to your GitHub Enterprise Server API, for example https://github.example.com/api/v3`,
-      'GITHUB_API_URL_INVALID',
-      { apiUrl: shown, reason },
-    );
+  throw new PlsError(
+    `pls works with github.com only, and GITHUB_API_URL points somewhere else: "${shown}".\n` +
+      `The token is sent to ${DEFAULT_API_URL} and to no other server. ` +
+      `Unset GITHUB_API_URL, or set it to ${DEFAULT_API_URL}.\n` +
+      `GitHub Enterprise Server is not supported.`,
+    'GITHUB_API_URL_UNSUPPORTED',
+    { apiUrl: shown },
+  );
+}
 
+/**
+ * `http://<loopback host>:<port>` when `apiUrl` is exactly that, else null.
+ * The result is assembled from a host name in LOOPBACK_HOSTS and a number.
+ */
+function localServerUrl(apiUrl: string): string | null {
   let url: URL;
   try {
     url = new URL(apiUrl);
   } catch {
-    throw invalid('it is not a URL');
+    return null;
   }
 
-  const loopback = url.hostname === 'localhost' || url.hostname === '[::1]' ||
-    /^127(\.\d{1,3}){3}$/.test(url.hostname);
-  if (url.protocol !== 'https:' && !(url.protocol === 'http:' && loopback)) {
-    throw invalid('the token would be sent without encryption; use https');
-  }
-  if (url.username || url.password) {
-    throw invalid('it contains credentials; pass the token with GITHUB_TOKEN instead');
-  }
-  if (url.search || url.hash) {
-    throw invalid('it has a query string or a fragment');
-  }
+  const host = LOOPBACK_HOSTS.find((name) => name === url.hostname);
+  const port = Number(url.port);
+  const plain = url.protocol === 'http:' && url.pathname === '/' && !url.search && !url.hash &&
+    !url.username && !url.password;
+  if (!host || !plain || !Number.isInteger(port) || port < 1 || port > 65535) return null;
 
-  return `${url.origin}${url.pathname}`.replace(/\/+$/, '');
+  return `http://${host}:${port}`;
 }
 
 export class GitHub implements CodeHost {
