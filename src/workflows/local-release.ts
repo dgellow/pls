@@ -5,11 +5,11 @@
  */
 
 import type { LocalRepo } from '../domain/vcs.ts';
-import type { VersionBump, VersionsManifest } from '../domain/types.ts';
+import type { VersionBump } from '../domain/types.ts';
 import { calculateBump, calculateTransition } from '../domain/bump.ts';
 import { filterReleasableCommits } from '../domain/commits.ts';
 import { generateChangelog, generateReleaseNotes } from '../domain/changelog.ts';
-import { buildReleaseFiles, requireVersionFile } from '../domain/files.ts';
+import { buildReleaseFiles, parseVersionsManifest, requireVersionFile } from '../domain/files.ts';
 import { readUpdatableManifests } from '../domain/manifest.ts';
 import { generateReleaseTagMessage } from '../domain/release-metadata.ts';
 import { PlsError } from '../lib/error.ts';
@@ -83,7 +83,7 @@ export async function localReleaseWorkflow(
     );
   }
 
-  const versions: VersionsManifest = JSON.parse(versionsContent);
+  const versions = parseVersionsManifest(versionsContent);
   const currentVersion = versions['.']?.version;
   if (!currentVersion) {
     throw new PlsError(
@@ -209,7 +209,7 @@ export async function transitionWorkflow(
     );
   }
 
-  const versions: VersionsManifest = JSON.parse(versionsContent);
+  const versions = parseVersionsManifest(versionsContent);
   const currentVersion = versions['.']?.version;
   if (!currentVersion) {
     throw new PlsError(

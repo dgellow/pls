@@ -5,10 +5,9 @@
  */
 
 import type { CodeHost } from '../domain/vcs.ts';
-import type { VersionsManifest } from '../domain/types.ts';
 import { classifyStep, nextVersions } from '../domain/bump.ts';
 import { extractChangelogEntry, retitleChangelogEntry } from '../domain/changelog.ts';
-import { buildReleaseFiles, requireVersionFile } from '../domain/files.ts';
+import { buildReleaseFiles, parseVersionsManifest, requireVersionFile } from '../domain/files.ts';
 import { readUpdatableManifests } from '../domain/manifest.ts';
 import { getSelectedVersion, updatePRBody } from '../domain/pr-body.ts';
 import { PlsError } from '../lib/error.ts';
@@ -48,7 +47,7 @@ export async function syncWorkflow(
   // not: people reword titles.
   const branchVersionsContent = await host.readFile('.pls/versions.json', pr.branch);
   const branchVersion = branchVersionsContent
-    ? (JSON.parse(branchVersionsContent) as VersionsManifest)['.']?.version ?? null
+    ? parseVersionsManifest(branchVersionsContent)['.']?.version ?? null
     : null;
 
   // 4. Check if already synced
@@ -66,7 +65,7 @@ export async function syncWorkflow(
     throw new PlsError('No .pls/versions.json found', 'NO_VERSIONS_MANIFEST');
   }
 
-  const versions: VersionsManifest = JSON.parse(versionsContent);
+  const versions = parseVersionsManifest(versionsContent);
   const fromVersion = versions['.']?.version;
   if (!fromVersion) {
     throw new PlsError('No root version found', 'NO_ROOT_VERSION');

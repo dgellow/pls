@@ -5,13 +5,14 @@
  */
 
 import type { CodeHost, LocalRepo } from '../domain/vcs.ts';
-import type { FileChanges, PullRequest, VersionBump, VersionsManifest } from '../domain/types.ts';
+import type { FileChanges, PullRequest, VersionBump } from '../domain/types.ts';
 import { calculateBump, classifyStep, nextVersions } from '../domain/bump.ts';
 import { filterReleasableCommits } from '../domain/commits.ts';
 import { generateChangelog, generateReleaseNotes } from '../domain/changelog.ts';
 import {
   buildReleaseFiles,
   createInitialVersionsManifest,
+  parseVersionsManifest,
   requireVersionFile,
 } from '../domain/files.ts';
 import { detectManifest, readUpdatableManifests } from '../domain/manifest.ts';
@@ -88,7 +89,7 @@ async function prepareOnce(
     return await bootstrapWorkflow(host, options);
   }
 
-  const versions: VersionsManifest = JSON.parse(versionsContent);
+  const versions = parseVersionsManifest(versionsContent);
   const currentVersion = versions['.']?.version;
   if (!currentVersion) {
     throw new PlsError(

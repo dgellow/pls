@@ -3,6 +3,7 @@
  */
 
 import { assertEquals, assertThrows } from '@std/assert';
+import { PlsError } from './error.ts';
 import {
   bump,
   bumpPrerelease,
@@ -244,4 +245,19 @@ Deno.test('compare', async (t) => {
     assertThrows(() => compare('invalid', '1.0.0'));
     assertThrows(() => compare('1.0.0', 'invalid'));
   });
+});
+
+Deno.test('a version pls cannot work with is answered with the form it needs', () => {
+  for (
+    const call of [
+      () => bump('one.two', 'minor'),
+      () => toPrerelease('one.two', 'minor', 'alpha'),
+      () => transition('one.two', 'beta'),
+    ]
+  ) {
+    const error = assertThrows(call, PlsError);
+    assertEquals(error.code, 'INVALID_VERSION');
+    assertEquals(error.message.includes('"one.two" is not a version pls can work with'), true);
+    assertEquals(error.message.includes('.pls/versions.json'), true);
+  }
 });
